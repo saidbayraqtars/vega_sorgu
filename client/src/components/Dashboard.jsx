@@ -9,26 +9,28 @@ function todayStr() {
   return d.toISOString().slice(0, 10);
 }
 
-// Tablo adından kısa etiket
-function shortLabel(tableName) {
-  return tableName ? tableName.replace("TBLCARIHAREKETLERI", "") : "";
-}
+const SUBE_LISTESI = [
+  { id: "0", name: "Merkez" },
+  { id: "1", name: "Şube 1" },
+  { id: "2", name: "Şube 2" },
+];
 
 export default function Dashboard() {
-  const { connectionInfo, activeTable, disconnect, goBackToPeriodSelection, fetchSummary, fetchDetails } = useConnection();
+  const { connectionInfo, selectedFirma, selectedDonem, disconnect, goBackToPeriodSelection, fetchSummary, fetchDetails } = useConnection();
   const [date, setDate] = useState(todayStr());
+  const [subeKodu, setSubeKodu] = useState("0");
   const [summary, setSummary] = useState(null);
   const [details, setDetails] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
-  const loadData = useCallback(async (selectedDate) => {
+  const loadData = useCallback(async (selectedDate, selectedSube) => {
     setLoading(true);
     setError(null);
     try {
       const [sum, det] = await Promise.all([
-        fetchSummary(selectedDate),
-        fetchDetails(selectedDate),
+        fetchSummary(selectedDate, selectedSube),
+        fetchDetails(selectedDate, selectedSube),
       ]);
       setSummary(sum);
       setDetails(det);
@@ -40,12 +42,8 @@ export default function Dashboard() {
   }, [fetchSummary, fetchDetails]);
 
   useEffect(() => {
-    loadData(date);
-  }, [date, loadData]);
-
-  const handleDateChange = (newDate) => {
-    setDate(newDate);
-  };
+    loadData(date, subeKodu);
+  }, [date, subeKodu, loadData]);
 
   return (
     <div className="min-h-screen bg-dark-900">
@@ -73,7 +71,7 @@ export default function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M6.75 3v2.25M17.25 3v2.25M3 18.75V7.5a2.25 2.25 0 012.25-2.25h13.5A2.25 2.25 0 0121 7.5v11.25m-18 0A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75m-18 0v-7.5A2.25 2.25 0 015.25 9h13.5A2.25 2.25 0 0121 11.25v7.5" />
               </svg>
               <span className="text-xs text-violet-300 font-semibold font-mono">
-                {shortLabel(activeTable)}
+                Firma: {selectedFirma} | Dönem: {selectedDonem}
               </span>
             </div>
 
@@ -87,12 +85,12 @@ export default function Dashboard() {
             <button
               onClick={goBackToPeriodSelection}
               className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-medium text-dark-400 hover:text-violet-400 hover:bg-violet-500/10 border border-white/5 hover:border-violet-500/20 transition-all duration-200"
-              title="Dönem Değiştir"
+              title="Değiştir"
             >
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
                 <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
               </svg>
-              <span className="hidden sm:inline">Dönem Değiştir</span>
+              <span className="hidden sm:inline">Değiştir</span>
             </button>
 
             {/* Disconnect */}
@@ -112,11 +110,29 @@ export default function Dashboard() {
 
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
-        {/* Date Picker Row */}
-        <div className="flex items-center justify-between">
-          <DatePicker value={date} onChange={handleDateChange} />
+        {/* Filters Row */}
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
+            <DatePicker value={date} onChange={setDate} />
+            
+            {/* Şube Seçimi */}
+            <div className="flex items-center gap-2">
+              <label htmlFor="subeSelect" className="text-sm font-medium text-dark-300">Şube:</label>
+              <select
+                id="subeSelect"
+                value={subeKodu}
+                onChange={(e) => setSubeKodu(e.target.value)}
+                className="bg-dark-800 border border-white/10 text-white text-sm rounded-xl focus:ring-violet-500 focus:border-violet-500 block p-2.5 outline-none transition-colors duration-200 hover:border-white/20"
+              >
+                {SUBE_LISTESI.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+          
           <button
-            onClick={() => loadData(date)}
+            onClick={() => loadData(date, subeKodu)}
             disabled={loading}
             className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-dark-300 hover:text-white bg-dark-800/60 hover:bg-dark-800 border border-white/10 transition-all duration-200 disabled:opacity-50"
           >

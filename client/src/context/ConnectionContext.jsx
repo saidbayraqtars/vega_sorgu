@@ -19,8 +19,10 @@ export function ConnectionProvider({ children }) {
   const [error, setError] = useState(null);
 
   // ─── Discovery State ────────────────────────────────────────
-  const [discoveredTables, setDiscoveredTables] = useState([]);
-  const [activeTable, setActiveTable] = useState(null);
+  const [firmalar, setFirmalar] = useState([]);
+  const [donemler, setDonemler] = useState([]);
+  const [selectedFirma, setSelectedFirma] = useState(null);
+  const [selectedDonem, setSelectedDonem] = useState(null);
 
   // ─── Connect & Discover ─────────────────────────────────────
   const connect = useCallback(async (config) => {
@@ -41,13 +43,14 @@ export function ConnectionProvider({ children }) {
           server: config.server,
           database: config.database,
         });
-        setDiscoveredTables(data.tables || []);
+        setFirmalar(data.firmalar || []);
+        setDonemler(data.donemler || []);
 
-        // Otomatik olarak dönem seçim adımına geç
-        if (data.tables && data.tables.length > 0) {
+        // Otomatik olarak firma/dönem seçim adımına geç
+        if (data.firmalar && data.firmalar.length > 0 && data.donemler && data.donemler.length > 0) {
           setStep("select-period");
         } else {
-          setError("Veritabanında TBLCARIHAREKETLERI ile biten tablo bulunamadı.");
+          setError("Veritabanında firma veya dönem bilgisi bulunamadı.");
         }
 
         return { success: true, message: data.message };
@@ -64,16 +67,18 @@ export function ConnectionProvider({ children }) {
     }
   }, []);
 
-  // ─── Select Period (sadece frontend state, backend'e gönderilmez) ─
-  const selectPeriod = useCallback((tableName) => {
-    setActiveTable(tableName);
+  // ─── Select Firma & Donem ───────────────────────────────────
+  const selectFirmaVeDonem = useCallback((firmaNo, donemNo) => {
+    setSelectedFirma(firmaNo);
+    setSelectedDonem(donemNo);
     setStep("dashboard");
     setError(null);
   }, []);
 
-  // ─── Go Back to Period Selection ────────────────────────────
+  // ─── Go Back to Selection ───────────────────────────────────
   const goBackToPeriodSelection = useCallback(() => {
-    setActiveTable(null);
+    setSelectedFirma(null);
+    setSelectedDonem(null);
     setStep("select-period");
     setError(null);
   }, []);
@@ -87,18 +92,20 @@ export function ConnectionProvider({ children }) {
     }
     setStep("login");
     setConnectionInfo(null);
-    setDiscoveredTables([]);
-    setActiveTable(null);
+    setFirmalar([]);
+    setDonemler([]);
+    setSelectedFirma(null);
+    setSelectedDonem(null);
     setError(null);
   }, []);
 
-  // ─── Fetch Summary (table gönderilir her istekte) ───────────
+  // ─── Fetch Summary ──────────────────────────────────────────
   const fetchSummary = useCallback(
-    async (date) => {
-      if (!activeTable) throw new Error("Dönem seçilmedi.");
+    async (date, subeKodu) => {
+      if (!selectedFirma || !selectedDonem) throw new Error("Firma ve Dönem seçilmedi.");
       try {
         const res = await fetch(
-          `${API_BASE}/summary?date=${date}&table=${encodeURIComponent(activeTable)}`
+          `${API_BASE}/summary?date=${date}&firmaNo=${selectedFirma}&donemNo=${selectedDonem}&subeKodu=${subeKodu}`
         );
         const data = await res.json();
         if (data.success) return data.data;
@@ -107,16 +114,16 @@ export function ConnectionProvider({ children }) {
         throw err;
       }
     },
-    [activeTable]
+    [selectedFirma, selectedDonem]
   );
 
-  // ─── Fetch Details (table gönderilir her istekte) ───────────
+  // ─── Fetch Details ──────────────────────────────────────────
   const fetchDetails = useCallback(
-    async (date) => {
-      if (!activeTable) throw new Error("Dönem seçilmedi.");
+    async (date, subeKodu) => {
+      if (!selectedFirma || !selectedDonem) throw new Error("Firma ve Dönem seçilmedi.");
       try {
         const res = await fetch(
-          `${API_BASE}/details?date=${date}&table=${encodeURIComponent(activeTable)}`
+          `${API_BASE}/details?date=${date}&firmaNo=${selectedFirma}&donemNo=${selectedDonem}&subeKodu=${subeKodu}`
         );
         const data = await res.json();
         if (data.success) return data.data;
@@ -125,7 +132,7 @@ export function ConnectionProvider({ children }) {
         throw err;
       }
     },
-    [activeTable]
+    [selectedFirma, selectedDonem]
   );
 
   return (
@@ -136,12 +143,14 @@ export function ConnectionProvider({ children }) {
         isLoading,
         connectionInfo,
         error,
-        discoveredTables,
-        activeTable,
+        firmalar,
+        donemler,
+        selectedFirma,
+        selectedDonem,
 
         // Actions
         connect,
-        selectPeriod,
+        selectFirmaVeDonem,
         goBackToPeriodSelection,
         disconnect,
         fetchSummary,

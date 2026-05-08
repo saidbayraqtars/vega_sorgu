@@ -95,23 +95,33 @@ app.post("/api/connect", async (req, res) => {
     currentConfig = config;
 
     // ╔═══════════════════════════════════════════════════════════╗
-    // ║  Smart Discovery: TBLCARIHAREKETLERI ile biten tabloları ║
-    // ║  otomatik olarak bul ve frontend'e gönder               ║
+    // ║  Smart Discovery: TBLFIRMA ve TBLDONEMLER               ║
+    // ║  tablolarını oku ve frontend'e gönder                   ║
     // ╚═══════════════════════════════════════════════════════════╝
-    const discovery = await pool.request().query(`
-      SELECT TABLE_NAME 
-      FROM INFORMATION_SCHEMA.TABLES 
-      WHERE TABLE_TYPE = 'BASE TABLE' 
-        AND TABLE_NAME LIKE '%TBLCARIHAREKETLERI'
-      ORDER BY TABLE_NAME
+    const request = pool.request();
+    
+    // Firma bilgilerini çek
+    const firmalarResult = await request.query(`
+      SELECT FIRMANO, FIRMAADI
+      FROM TBLFIRMA
+      ORDER BY FIRMANO
+    `);
+    
+    // Dönem bilgilerini çek
+    const donemlerResult = await request.query(`
+      SELECT DONEMNO, BASLANGICTARIHI, BITISTARIHI
+      FROM TBLDONEMLER
+      ORDER BY DONEMNO
     `);
 
-    const tables = discovery.recordset.map((r) => r.TABLE_NAME);
+    const firmalar = firmalarResult.recordset;
+    const donemler = donemlerResult.recordset;
 
     res.json({
       success: true,
       message: `${database} veritabanına başarıyla bağlanıldı.`,
-      tables,
+      firmalar,
+      donemler,
     });
   } catch (err) {
     pool = null;
@@ -153,53 +163,63 @@ app.post("/api/disconnect", async (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════
 // ENDPOINT: Günlük Özet (Nakit + Visa Toplamları)
-// ─── activeTable frontend'den her istekte gönderilir ──────────
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/summary", async (req, res) => {
   if (!requireConnection(req, res)) return;
 
-  const { date, table } = req.query;
+  const { date, firmaNo, donemNo, subeKodu } = req.query;
 
-  if (!date) {
-    return res.status(400).json({ success: false, message: "Tarih parametresi gerekli." });
-  }
-  if (!table) {
-    return res.status(400).json({ success: false, message: "Tablo parametresi gerekli. Lütfen bir dönem seçin." });
+  if (!date || !firmaNo || !donemNo || subeKodu === undefined) {
+    return res.status(400).json({ success: false, message: "Tarih, firmaNo, donemNo ve subeKodu parametreleri gerekli." });
   }
 
-  // Tablo adını doğrula (SQL Injection koruması)
-  const isValid = await validateTableName(table);
-  if (!isValid) {
-    return res.status(400).json({ success: false, message: `Geçersiz tablo adı: ${table}` });
-  }
+  const kasaTable = `F${firmaNo}TBLKASA`;
+  const cariTable = `F${firmaNo}${donemNo}TBLCARIHAREKETLERI`;
+
+  // Tablo adlarını doğrula (SQL Injection koruması)
+  const isKasaValid = await validateTableName(kasaTable);
+  const isCariValid = await validateTableName(cariTable);
 
   try {
     const request = pool.request();
     request.input("date", sql.Date, date);
+    request.input("subeKodu", sql.NVarChar, subeKodu);
 
-    // ╔═══════════════════════════════════════════════════════════╗
-    // ║  Arctos ERP Sorgu Mantığı:                              ║
-    // ║  IZAHAT = 83  → Nakit (Cash)                            ║
-    // ║  IZAHAT = 13  → Visa                                    ║
-    // ║  ALACAK       → Tutar (Amount)                          ║
-    // ║  ISLEMTARIHI  → İşlem Tarihi (Date)                     ║
-    // ╚═══════════════════════════════════════════════════════════╝
-    const query = `
-      SELECT 
-        ISNULL(SUM(CASE WHEN IZAHAT = 83 THEN ALACAK ELSE 0 END), 0) AS toplamNakit,
-        ISNULL(SUM(CASE WHEN IZAHAT = 13 THEN ALACAK ELSE 0 END), 0) AS toplamVisa
-      FROM [${table}]
-      WHERE CAST(ISLEMTARIHI AS DATE) = @date
-    `;
+    let toplamNakit = 0;
+    let toplamVisa = 0;
 
-    const result = await request.query(query);
-    const row = result.recordset[0] || { toplamNakit: 0, toplamVisa: 0 };
+    if (isKasaValid) {
+      const nakitQuery = `
+        SELECT ISNULL(SUM(TUTAR), 0) AS toplamNakit
+        FROM [${kasaTable}]
+        WHERE CAST(TARIH AS DATE) = @date
+          AND SUBE_KODU = @subeKodu
+      `;
+      const result = await request.query(nakitQuery);
+      if (result.recordset.length > 0) {
+        toplamNakit = result.recordset[0].toplamNakit;
+      }
+    }
+
+    if (isCariValid) {
+      const visaQuery = `
+        SELECT ISNULL(SUM(ALACAK), 0) AS toplamVisa
+        FROM [${cariTable}]
+        WHERE IZAHAT = 13
+          AND CAST(ISLEMTARIHI AS DATE) = @date
+          AND SUBE_KODU = @subeKodu
+      `;
+      const result = await request.query(visaQuery);
+      if (result.recordset.length > 0) {
+        toplamVisa = result.recordset[0].toplamVisa;
+      }
+    }
 
     res.json({
       success: true,
       data: {
-        toplamNakit: row.toplamNakit,
-        toplamVisa: row.toplamVisa,
+        toplamNakit,
+        toplamVisa,
         tarih: date,
       },
     });
@@ -214,47 +234,58 @@ app.get("/api/summary", async (req, res) => {
 
 // ═══════════════════════════════════════════════════════════════
 // ENDPOINT: Günlük İşlem Detayları
-// ─── activeTable frontend'den her istekte gönderilir ──────────
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/details", async (req, res) => {
   if (!requireConnection(req, res)) return;
 
-  const { date, table } = req.query;
+  const { date, firmaNo, donemNo, subeKodu } = req.query;
 
-  if (!date) {
-    return res.status(400).json({ success: false, message: "Tarih parametresi gerekli." });
-  }
-  if (!table) {
-    return res.status(400).json({ success: false, message: "Tablo parametresi gerekli. Lütfen bir dönem seçin." });
+  if (!date || !firmaNo || !donemNo || subeKodu === undefined) {
+    return res.status(400).json({ success: false, message: "Tarih, firmaNo, donemNo ve subeKodu parametreleri gerekli." });
   }
 
-  // Tablo adını doğrula
-  const isValid = await validateTableName(table);
-  if (!isValid) {
-    return res.status(400).json({ success: false, message: `Geçersiz tablo adı: ${table}` });
-  }
+  const kasaTable = `F${firmaNo}TBLKASA`;
+  const cariTable = `F${firmaNo}${donemNo}TBLCARIHAREKETLERI`;
+
+  const isKasaValid = await validateTableName(kasaTable);
+  const isCariValid = await validateTableName(cariTable);
 
   try {
     const request = pool.request();
     request.input("date", sql.Date, date);
+    request.input("subeKodu", sql.NVarChar, subeKodu);
 
-    const query = `
-      SELECT 
-        ISLEMTARIHI,
-        ALACAK,
-        IZAHAT
-      FROM [${table}]
-      WHERE CAST(ISLEMTARIHI AS DATE) = @date
-        AND IZAHAT IN (83, 13)
-      ORDER BY ISLEMTARIHI ASC
-    `;
+    const details = [];
 
-    const result = await request.query(query);
+    if (isKasaValid) {
+      const nakitQuery = `
+        SELECT TARIH AS ISLEMTARIHI, TUTAR AS ALACAK, 83 AS IZAHAT
+        FROM [${kasaTable}]
+        WHERE CAST(TARIH AS DATE) = @date
+          AND SUBE_KODU = @subeKodu
+      `;
+      const result = await request.query(nakitQuery);
+      details.push(...result.recordset);
+    }
+
+    if (isCariValid) {
+      const visaQuery = `
+        SELECT ISLEMTARIHI, ALACAK, IZAHAT
+        FROM [${cariTable}]
+        WHERE CAST(ISLEMTARIHI AS DATE) = @date
+          AND SUBE_KODU = @subeKodu
+          AND IZAHAT = 13
+      `;
+      const result = await request.query(visaQuery);
+      details.push(...result.recordset);
+    }
+
+    details.sort((a, b) => new Date(a.ISLEMTARIHI) - new Date(b.ISLEMTARIHI));
 
     res.json({
       success: true,
-      data: result.recordset,
-      count: result.recordset.length,
+      data: details,
+      count: details.length,
       tarih: date,
     });
   } catch (err) {
