@@ -1,11 +1,13 @@
 import { useState, useEffect, useCallback } from "react";
 import { useConnection } from "../context/ConnectionContext";
-import DatePicker from "./DatePicker";
+import DateRangePicker from "./DateRangePicker";
 import SummaryCards from "./SummaryCards";
 import TransactionTable from "./TransactionTable";
+import StokTable from "./StokTable";
 
-function todayStr() {
+function todayStr(offsetDays = 0) {
   const d = new Date();
+  d.setDate(d.getDate() + offsetDays);
   return d.toISOString().slice(0, 10);
 }
 
@@ -17,33 +19,84 @@ const SUBE_LISTESI = [
 
 export default function Dashboard() {
   const { connectionInfo, selectedFirma, selectedDonem, disconnect, goBackToPeriodSelection, fetchSummary, fetchDetails } = useConnection();
-  const [date, setDate] = useState(todayStr());
+  const [startDate, setStartDate] = useState(todayStr());
+  const [endDate, setEndDate] = useState(todayStr());
   const [subeKodu, setSubeKodu] = useState("0");
   const [summary, setSummary] = useState(null);
+  const [allTimeSummary, setAllTimeSummary] = useState(null);
   const [details, setDetails] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [expandedCard, setExpandedCard] = useState(null); // 'allTime' | 'selectedDate' | null
 
-  const loadData = useCallback(async (selectedDate, selectedSube) => {
+  // Yalnızca summary verilerini (All-time ve Seçili Tarih) çek
+  const loadSummaries = useCallback(async (start, end, selectedSube) => {
     setLoading(true);
     setError(null);
     try {
-      const [sum, det] = await Promise.all([
-        fetchSummary(selectedDate, selectedSube),
-        fetchDetails(selectedDate, selectedSube),
+      const [sum, sumAllTime] = await Promise.all([
+        fetchSummary(start, end, selectedSube, false),
+        fetchSummary(start, end, selectedSube, true),
       ]);
       setSummary(sum);
-      setDetails(det);
+      setAllTimeSummary(sumAllTime);
     } catch (err) {
       setError(err.message);
     } finally {
       setLoading(false);
     }
-  }, [fetchSummary, fetchDetails]);
+  }, [fetchSummary]);
+
+  // Tablo görünürse veya değişirse detayları çek
+  useEffect(() => {
+    if (!expandedCard) {
+      setDetails([]);
+      return;
+    }
+    
+    let isMounted = true;
+    const loadDetails = async () => {
+      setLoading(true);
+      setError(null);
+      try {
+        const isAllTime = expandedCard === 'allTime';
+        const detData = await fetchDetails(startDate, endDate, subeKodu, isAllTime);
+        if (isMounted) setDetails(detData);
+      } catch (err) {
+        if (isMounted) setError(err.message);
+      } finally {
+        if (isMounted) setLoading(false);
+      }
+    };
+    loadDetails();
+
+    return () => { isMounted = false; };
+  }, [expandedCard, startDate, endDate, subeKodu, fetchDetails]);
 
   useEffect(() => {
-    loadData(date, subeKodu);
-  }, [date, subeKodu, loadData]);
+    loadSummaries(startDate, endDate, subeKodu);
+  }, [startDate, endDate, subeKodu, loadSummaries]);
+
+  const handlePrevDay = () => {
+    const current = new Date(startDate);
+    current.setDate(current.getDate() - 1);
+    const prev = current.toISOString().slice(0, 10);
+    setStartDate(prev);
+    setEndDate(prev);
+  };
+
+  const handleNextDay = () => {
+    const current = new Date(startDate);
+    current.setDate(current.getDate() + 1);
+    const next = current.toISOString().slice(0, 10);
+    setStartDate(next);
+    setEndDate(next);
+  };
+
+  const handleToday = () => {
+    setStartDate(todayStr(0));
+    setEndDate(todayStr(0));
+  };
 
   return (
     <div className="min-h-screen bg-dark-900">
@@ -111,9 +164,28 @@ export default function Dashboard() {
       {/* Main Content */}
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-8 space-y-8">
         {/* Filters Row */}
-        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
-          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-            <DatePicker value={date} onChange={setDate} />
+        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4">
+          <div className="flex flex-col lg:flex-row items-start lg:items-center gap-4 w-full">
+            
+            {/* Quick Date Buttons */}
+            <div className="flex items-center gap-2">
+              <button onClick={handlePrevDay} className="px-4 py-2 rounded-xl bg-dark-800 border border-white/10 text-white text-sm font-medium hover:bg-violet-600/20 hover:border-violet-500/50 transition-all">
+                Önceki Gün
+              </button>
+              <button onClick={handleNextDay} className="px-4 py-2 rounded-xl bg-dark-800 border border-white/10 text-white text-sm font-medium hover:bg-violet-600/20 hover:border-violet-500/50 transition-all">
+                Sonraki Gün
+              </button>
+              <button onClick={handleToday} className="px-4 py-2 rounded-xl bg-dark-800 border border-white/10 text-white text-sm font-medium hover:bg-violet-600/20 hover:border-violet-500/50 transition-all">
+                Bugün
+              </button>
+            </div>
+
+            <DateRangePicker 
+              startDate={startDate} 
+              endDate={endDate} 
+              onStartChange={setStartDate} 
+              onEndChange={setEndDate} 
+            />
             
             {/* Şube Seçimi */}
             <div className="flex items-center gap-2">
@@ -129,18 +201,18 @@ export default function Dashboard() {
                 ))}
               </select>
             </div>
+
+            <button
+              onClick={() => loadSummaries(startDate, endDate, subeKodu)}
+              disabled={loading}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-dark-300 hover:text-white bg-dark-800/60 hover:bg-dark-800 border border-white/10 transition-all duration-200 disabled:opacity-50 ml-auto"
+            >
+              <svg className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
+              </svg>
+              Yenile
+            </button>
           </div>
-          
-          <button
-            onClick={() => loadData(date, subeKodu)}
-            disabled={loading}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium text-dark-300 hover:text-white bg-dark-800/60 hover:bg-dark-800 border border-white/10 transition-all duration-200 disabled:opacity-50"
-          >
-            <svg className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
-            </svg>
-            Yenile
-          </button>
         </div>
 
         {/* Error */}
@@ -157,10 +229,27 @@ export default function Dashboard() {
         )}
 
         {/* Summary Cards */}
-        <SummaryCards summary={summary} isLoading={loading} />
+        <SummaryCards 
+          summary={summary} 
+          allTimeSummary={allTimeSummary} 
+          isLoading={loading && !expandedCard} // Sadece ilk yüklemede kartlarda loading göster, detay çekerken değil
+          expandedCard={expandedCard}
+          setExpandedCard={setExpandedCard}
+        />
 
         {/* Transaction Table */}
-        <TransactionTable data={details} isLoading={loading} />
+        {expandedCard && (
+          <div className="animate-slide-down">
+            <TransactionTable 
+              data={details} 
+              isLoading={loading} 
+              title={expandedCard === 'allTime' ? "Tüm Zamanların İşlem Detayları" : "Seçili Tarih İşlem Detayları"} 
+            />
+          </div>
+        )}
+
+        {/* Stok Table */}
+        <StokTable />
       </main>
 
       {/* Footer */}

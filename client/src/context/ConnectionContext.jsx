@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback } from "react";
+import { createContext, useContext, useState, useCallback, useEffect } from "react";
 
 const ConnectionContext = createContext(null);
 
@@ -13,7 +13,7 @@ export const IZAHAT_MAP = {
 
 export function ConnectionProvider({ children }) {
   // ─── Application State ──────────────────────────────────────
-  const [step, setStep] = useState("login"); // "login" | "select-period" | "dashboard"
+  const [step, setStep] = useState("loading"); // "loading" | "setup" | "pin-login" | "select-period" | "dashboard"
   const [isLoading, setIsLoading] = useState(false);
   const [connectionInfo, setConnectionInfo] = useState(null);
   const [error, setError] = useState(null);
@@ -24,47 +24,110 @@ export function ConnectionProvider({ children }) {
   const [selectedFirma, setSelectedFirma] = useState(null);
   const [selectedDonem, setSelectedDonem] = useState(null);
 
-  // ─── Connect & Discover ─────────────────────────────────────
-  const connect = useCallback(async (config) => {
+  // ─── Check Setup ───────────────────────────────────────────
+  const checkSetup = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/check-setup`);
+      const data = await res.json();
+      if (data.isSetup) {
+        setStep("pin-login");
+      } else {
+        setStep("setup");
+      }
+    } catch (err) {
+      setError("Sunucuya ulaşılamıyor.");
+      setStep("setup");
+    }
+  }, []);
+
+  // ─── Initial Check ──────────────────────────────────────────
+  useEffect(() => {
+    checkSetup();
+  }, [checkSetup]);
+
+  // ─── Setup (İlk Kurulum) ────────────────────────────────────
+  const setup = useCallback(async (config, pin) => {
     setIsLoading(true);
     setError(null);
-
     try {
-      const res = await fetch(`${API_BASE}/connect`, {
+      const res = await fetch(`${API_BASE}/setup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(config),
+        body: JSON.stringify({ ...config, pin }),
       });
-
       const data = await res.json();
 
       if (data.success) {
-        setConnectionInfo({
-          server: config.server,
-          database: config.database,
-        });
+        setConnectionInfo({ server: config.server, database: config.database });
         setFirmalar(data.firmalar || []);
         setDonemler(data.donemler || []);
 
-        // Otomatik olarak firma/dönem seçim adımına geç
-        if (data.firmalar && data.firmalar.length > 0 && data.donemler && data.donemler.length > 0) {
+        if (data.firmalar?.length > 0 && data.donemler?.length > 0) {
           setStep("select-period");
         } else {
-          setError("Veritabanında firma veya dönem bilgisi bulunamadı.");
+          setError("Veritabanında firma/dönem bulunamadı.");
         }
-
-        return { success: true, message: data.message };
+        return { success: true };
       } else {
         setError(data.message);
         return { success: false, message: data.message };
       }
     } catch (err) {
-      const message = "Sunucuya bağlanılamadı. Backend çalışıyor mu?";
-      setError(message);
-      return { success: false, message };
+      setError("Sunucuya bağlanılamadı.");
+      return { success: false };
     } finally {
       setIsLoading(false);
     }
+  }, []);
+
+  // ─── Login (PIN ile) ────────────────────────────────────────
+  const login = useCallback(async (pin) => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const res = await fetch(`${API_BASE}/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pin }),
+      });
+      const data = await res.json();
+
+      if (data.success) {
+        // config içindeki sunucu adını falan login dönebilir ama şimdilik "Bağlı" diyelim
+        setConnectionInfo({ server: "Kayıtlı Sunucu", database: "Kayıtlı Veritabanı" });
+        setFirmalar(data.firmalar || []);
+        setDonemler(data.donemler || []);
+
+        if (data.firmalar?.length > 0 && data.donemler?.length > 0) {
+          setStep("select-period");
+        } else {
+          setError("Veritabanında firma/dönem bulunamadı.");
+        }
+        return { success: true };
+      } else {
+        setError(data.message);
+        return { success: false, message: data.message };
+      }
+    } catch (err) {
+      setError("Sunucuya bağlanılamadı.");
+      return { success: false };
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  // ─── Reset Setup ────────────────────────────────────────────
+  const resetSetup = useCallback(async () => {
+    try {
+      await fetch(`${API_BASE}/reset`, { method: "POST" });
+    } catch {}
+    setStep("setup");
+    setConnectionInfo(null);
+    setFirmalar([]);
+    setDonemler([]);
+    setSelectedFirma(null);
+    setSelectedDonem(null);
+    setError(null);
   }, []);
 
   // ─── Select Firma & Donem ───────────────────────────────────
@@ -84,16 +147,10 @@ export function ConnectionProvider({ children }) {
   }, []);
 
   // ─── Disconnect ─────────────────────────────────────────────
-  const disconnect = useCallback(async () => {
-    try {
-      await fetch(`${API_BASE}/disconnect`, { method: "POST" });
-    } catch {
-      // ignore
-    }
-    setStep("login");
-    setConnectionInfo(null);
-    setFirmalar([]);
-    setDonemler([]);
+  const disconnect = useCallback(() => {
+    // Sadece select-period'a veya login'e döndürebiliriz.
+    // Pin girişine döndürmek daha mantıklı
+    setStep("pin-login");
     setSelectedFirma(null);
     setSelectedDonem(null);
     setError(null);
@@ -101,12 +158,14 @@ export function ConnectionProvider({ children }) {
 
   // ─── Fetch Summary ──────────────────────────────────────────
   const fetchSummary = useCallback(
-    async (date, subeKodu) => {
+    async (startDate, endDate, subeKodu, allTime = false) => {
       if (!selectedFirma || !selectedDonem) throw new Error("Firma ve Dönem seçilmedi.");
       try {
-        const res = await fetch(
-          `${API_BASE}/summary?date=${date}&firmaNo=${selectedFirma}&donemNo=${selectedDonem}&subeKodu=${subeKodu}`
-        );
+        let url = `${API_BASE}/summary?firmaNo=${selectedFirma}&donemNo=${selectedDonem}&subeKodu=${subeKodu}`;
+        if (allTime) url += `&allTime=true`;
+        else url += `&startDate=${startDate}&endDate=${endDate}`;
+        
+        const res = await fetch(url);
         const data = await res.json();
         if (data.success) return data.data;
         throw new Error(data.message);
@@ -119,12 +178,14 @@ export function ConnectionProvider({ children }) {
 
   // ─── Fetch Details ──────────────────────────────────────────
   const fetchDetails = useCallback(
-    async (date, subeKodu) => {
+    async (startDate, endDate, subeKodu, allTime = false) => {
       if (!selectedFirma || !selectedDonem) throw new Error("Firma ve Dönem seçilmedi.");
       try {
-        const res = await fetch(
-          `${API_BASE}/details?date=${date}&firmaNo=${selectedFirma}&donemNo=${selectedDonem}&subeKodu=${subeKodu}`
-        );
+        let url = `${API_BASE}/details?firmaNo=${selectedFirma}&donemNo=${selectedDonem}&subeKodu=${subeKodu}`;
+        if (allTime) url += `&allTime=true`;
+        else url += `&startDate=${startDate}&endDate=${endDate}`;
+
+        const res = await fetch(url);
         const data = await res.json();
         if (data.success) return data.data;
         throw new Error(data.message);
@@ -133,6 +194,21 @@ export function ConnectionProvider({ children }) {
       }
     },
     [selectedFirma, selectedDonem]
+  );
+
+  // ─── Fetch Stok ─────────────────────────────────────────────
+  const fetchStok = useCallback(
+    async (search = "") => {
+      try {
+        const res = await fetch(`${API_BASE}/stok?search=${encodeURIComponent(search)}`);
+        const data = await res.json();
+        if (data.success) return data.data;
+        throw new Error(data.message);
+      } catch (err) {
+        throw err;
+      }
+    },
+    []
   );
 
   return (
@@ -149,12 +225,16 @@ export function ConnectionProvider({ children }) {
         selectedDonem,
 
         // Actions
-        connect,
+        setup,
+        login,
+        resetSetup,
+        checkSetup,
         selectFirmaVeDonem,
         goBackToPeriodSelection,
         disconnect,
         fetchSummary,
         fetchDetails,
+        fetchStok,
       }}
     >
       {children}

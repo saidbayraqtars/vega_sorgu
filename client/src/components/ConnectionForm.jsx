@@ -2,13 +2,14 @@ import { useState } from "react";
 import { useConnection } from "../context/ConnectionContext";
 
 export default function ConnectionForm() {
-  const { connect, isLoading, error } = useConnection();
+  const { setup, isLoading, error } = useConnection();
   const [form, setForm] = useState({
     server: "",
     database: "",
     username: "",
     password: "",
     port: "1433",
+    pin: "",
   });
 
   const handleChange = (e) => {
@@ -17,7 +18,8 @@ export default function ConnectionForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    await connect(form);
+    const { pin, ...config } = form;
+    await setup(config, pin);
     // Başarılıysa context otomatik olarak "select-period" adımına geçer
   };
 
@@ -148,6 +150,28 @@ export default function ConnectionForm() {
             />
           </div>
 
+          {/* Setup PIN */}
+          <div className="space-y-1.5 pt-2 border-t border-white/5 mt-4">
+            <label className="block text-xs font-semibold text-violet-400 uppercase tracking-wider">
+              Uygulama PIN Kodu Belirle (6 Haneli)
+            </label>
+            <input
+              type="password"
+              name="pin"
+              value={form.pin}
+              onChange={(e) => {
+                const val = e.target.value.replace(/\D/g, '').slice(0, 6);
+                setForm(prev => ({...prev, pin: val}));
+              }}
+              placeholder="••••••"
+              required
+              pattern="\d{6}"
+              title="Lütfen 6 haneli bir rakam girin"
+              className="w-full px-4 py-3 rounded-xl bg-violet-900/10 border border-violet-500/20 text-white placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/40 transition-all duration-200 text-center tracking-[0.5em] font-mono text-lg"
+            />
+            <p className="text-xs text-dark-500 text-center">Sonraki girişlerde şifre girmemek için bu PIN kullanılacak.</p>
+          </div>
+
           {/* Error */}
           {error && (
             <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/20 animate-slide-down">
@@ -170,14 +194,14 @@ export default function ConnectionForm() {
                   <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
                   <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v4a4 4 0 00-4 4H4z" />
                 </svg>
-                Bağlanıyor & Keşfediliyor...
+                Bağlanıyor & Kaydediliyor...
               </span>
             ) : (
               <span className="flex items-center justify-center gap-2">
                 <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M16.5 10.5V6.75a4.5 4.5 0 10-9 0v3.75m-.75 11.25h10.5a2.25 2.25 0 002.25-2.25v-6.75a2.25 2.25 0 00-2.25-2.25H6.75a2.25 2.25 0 00-2.25 2.25v6.75a2.25 2.25 0 002.25 2.25z" />
                 </svg>
-                Bağlan & Keşfet
+                Kaydet & Bağlan
               </span>
             )}
           </button>

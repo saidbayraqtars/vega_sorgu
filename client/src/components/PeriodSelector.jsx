@@ -5,7 +5,24 @@ export default function PeriodSelector() {
   const { connectionInfo, firmalar, donemler, selectFirmaVeDonem, disconnect } = useConnection();
   
   const [selectedFirma, setSelectedFirma] = useState(firmalar[0]?.FIRMANO || "");
-  const [selectedDonem, setSelectedDonem] = useState(donemler[0]?.DONEMNO || "");
+  const [selectedDonem, setSelectedDonem] = useState("");
+
+  // Seçilen firmanın orijinal IND değerini bul (TBLDONEM.FIND ile eşleşmek için)
+  const getIND = (firmaNo) => {
+    const firma = firmalar.find(f => f.FIRMANO === firmaNo);
+    return firma ? firma.IND : null;
+  };
+
+  // Seçilen firmaya ait dönemleri filtrele (FIND = TBLFIRMA.IND)
+  const filteredDonemler = donemler.filter(d => String(d.FIND) === String(getIND(selectedFirma)));
+
+  // Firma değiştiğinde dönem seçimini sıfırla ve ilk dönemi seç
+  const handleFirmaChange = (firmaNo) => {
+    setSelectedFirma(firmaNo);
+    const firmaIND = firmalar.find(f => f.FIRMANO === firmaNo)?.IND;
+    const firmaDonemler = donemler.filter(d => String(d.FIND) === String(firmaIND));
+    setSelectedDonem(firmaDonemler[0]?.DONEMNO || "");
+  };
 
   const handleContinue = () => {
     if (selectedFirma && selectedDonem) {
@@ -83,7 +100,7 @@ export default function PeriodSelector() {
                 <button
                   key={f.FIRMANO}
                   type="button"
-                  onClick={() => setSelectedFirma(f.FIRMANO)}
+                  onClick={() => handleFirmaChange(f.FIRMANO)}
                   className={`w-full flex items-center gap-4 p-4 rounded-xl border transition-all duration-200 text-left ${
                     selectedFirma === f.FIRMANO
                       ? "bg-violet-500/15 border-violet-500/40 shadow-lg shadow-violet-500/10"
@@ -118,7 +135,9 @@ export default function PeriodSelector() {
               Dönem
             </label>
             <div className="space-y-2 max-h-48 overflow-y-auto pr-1 custom-scrollbar">
-              {donemler.map((d) => (
+              {filteredDonemler.length === 0 ? (
+                <div className="p-4 text-center text-dark-500 text-sm">Bu firmaya ait dönem bulunamadı</div>
+              ) : filteredDonemler.map((d) => (
                 <button
                   key={d.DONEMNO}
                   type="button"
@@ -137,16 +156,13 @@ export default function PeriodSelector() {
                   <div className={`px-3 py-1.5 rounded-lg text-xs font-bold font-mono transition-all duration-200 ${
                     selectedDonem === d.DONEMNO ? "bg-violet-500/25 text-violet-300" : "bg-dark-700 text-dark-400"
                   }`}>
-                    {d.DONEMNO}
+                    {d.DONEM}
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className={`text-sm font-medium truncate transition-colors duration-200 ${
                       selectedDonem === d.DONEMNO ? "text-white" : "text-dark-300"
                     }`}>
-                      Dönem {d.DONEMNO}
-                    </p>
-                    <p className="text-xs text-dark-500 truncate font-mono mt-0.5">
-                      {new Date(d.BASLANGICTARIHI).toLocaleDateString("tr-TR")} - {new Date(d.BITISTARIHI).toLocaleDateString("tr-TR")}
+                      {d.DONEM} Dönemi
                     </p>
                   </div>
                 </button>

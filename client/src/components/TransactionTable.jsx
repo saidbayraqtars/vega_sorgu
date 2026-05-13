@@ -1,28 +1,11 @@
 import { useState, useMemo } from "react";
-import { IZAHAT_MAP } from "../context/ConnectionContext";
+import Fuse from "fuse.js";
 
-// ─── IZAHAT → Kullanıcı Dostu Etiket ─────────────────────────
-function getPaymentLabel(izahat) {
-  const mapped = IZAHAT_MAP[izahat];
-  return mapped ? mapped.label : `Bilinmeyen (${izahat})`;
-}
-
-function getPaymentType(izahat) {
-  const mapped = IZAHAT_MAP[izahat];
-  return mapped ? mapped.type : "unknown";
-}
-
-const FILTER_OPTIONS = [
-  { label: "Tümü", value: "all" },
-  { label: "💵 Nakit", value: "cash" },
-  { label: "💳 Visa", value: "visa" },
-];
-
-export default function TransactionTable({ data, isLoading }) {
-  const [filter, setFilter] = useState("all");
+export default function TransactionTable({ data, isLoading, title = "İşlem Detayları" }) {
   const [sortKey, setSortKey] = useState("ISLEMTARIHI");
   const [sortDir, setSortDir] = useState("asc");
   const [search, setSearch] = useState("");
+  const [didYouMean, setDidYouMean] = useState(null);
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -35,26 +18,42 @@ export default function TransactionTable({ data, isLoading }) {
 
   const filtered = useMemo(() => {
     if (!data) return [];
-    let rows = data.map((row) => ({
-      ...row,
-      _paymentType: getPaymentType(row.IZAHAT),
-      _paymentLabel: getPaymentLabel(row.IZAHAT),
-    }));
+    let rows = [...data];
+    setDidYouMean(null);
 
-    // Tip filtresi
-    if (filter !== "all") {
-      rows = rows.filter((r) => r._paymentType === filter);
-    }
-
-    // Arama
+    // Arama (Fuse.js ile Fuzzy Search)
     if (search.trim()) {
-      const s = search.toLowerCase();
-      rows = rows.filter(
-        (r) =>
-          r._paymentLabel.toLowerCase().includes(s) ||
-          String(r.ALACAK).includes(s) ||
-          (r.ISLEMTARIHI || "").toString().toLowerCase().includes(s)
-      );
+      const fuse = new Fuse(rows, {
+        keys: ["IZAHAT", "ALACAK", "ISLEMTARIHI"],
+        threshold: 0.4, // Hata toleransı
+        distance: 100,
+        includeScore: true,
+        ignoreLocation: true,
+        useExtendedSearch: true
+      });
+
+      // Boşlukla ayrılmış kelimeleri AND mantığıyla ara
+      const searchTerms = search.trim().split(/\s+/).map(t => `'${t}`).join(' ');
+      const results = fuse.search(searchTerms);
+
+      // Eğer sonuç yoksa ama toleransla eşleşen bir kelime varsa "Şunu mu demek istediniz?" için normal arama yap
+      if (results.length === 0) {
+        const looseFuse = new Fuse(rows, {
+          keys: ["IZAHAT"],
+          threshold: 0.6, 
+          includeScore: true,
+        });
+        const looseRes = looseFuse.search(search.trim());
+        if (looseRes.length > 0 && looseRes[0].score < 0.6) {
+          // Bulunan en iyi eşleşmedeki kelimelerden birini öner
+          const suggestion = looseRes[0].item.IZAHAT;
+          // Kaba bir şekilde ilk kelimeyi veya mantıklı bir kısmı al
+          const matchWord = suggestion.split(" ").find(w => new Fuse([w], {threshold:0.5}).search(search.split(" ")[0]).length > 0);
+          setDidYouMean(matchWord || suggestion);
+        }
+      }
+
+      rows = results.map(result => result.item);
     }
 
     // Sıralama
@@ -68,7 +67,7 @@ export default function TransactionTable({ data, isLoading }) {
     });
 
     return rows;
-  }, [data, filter, sortKey, sortDir, search]);
+  }, [data, sortKey, sortDir, search]);
 
   // Toplam hesapla
   const totalAmount = useMemo(() => {
@@ -83,7 +82,7 @@ export default function TransactionTable({ data, isLoading }) {
   const columns = [
     { key: "ISLEMTARIHI", label: "Tarih / Saat" },
     { key: "ALACAK", label: "Tutar (₺)" },
-    { key: "IZAHAT", label: "Ödeme Tipi" },
+    { key: "IZAHAT", label: "İzahat" },
   ];
 
   // Tarih formatlama
@@ -109,7 +108,7 @@ export default function TransactionTable({ data, isLoading }) {
           <svg className="w-5 h-5 text-dark-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.8}>
             <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
           </svg>
-          <h2 className="text-white font-semibold">İşlem Detayları</h2>
+          <h2 className="text-white font-semibold">{title}</h2>
           {filtered.length > 0 && (
             <span className="ml-2 px-2.5 py-0.5 rounded-full text-xs font-medium bg-dark-700 text-dark-300">
               {filtered.length} kayıt
@@ -117,7 +116,7 @@ export default function TransactionTable({ data, isLoading }) {
           )}
         </div>
 
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+        <div className="flex flex-col items-end gap-1 w-full sm:w-auto">
           {/* Search */}
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -125,29 +124,17 @@ export default function TransactionTable({ data, isLoading }) {
             </svg>
             <input
               type="text"
-              placeholder="Ara..."
+              placeholder="Google gibi arayın..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 pr-4 py-2 rounded-lg bg-dark-900/60 border border-white/10 text-white text-sm placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-cyan-500/30 w-full sm:w-48 transition-all"
+              className="pl-9 pr-4 py-2 rounded-lg bg-dark-900/60 border border-white/10 text-white text-sm placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-violet-500/30 focus:border-violet-500/50 w-full sm:w-64 transition-all"
             />
           </div>
-
-          {/* Filter */}
-          <div className="flex rounded-lg overflow-hidden border border-white/10">
-            {FILTER_OPTIONS.map((opt) => (
-              <button
-                key={opt.value}
-                onClick={() => setFilter(opt.value)}
-                className={`px-3.5 py-2 text-xs font-semibold transition-all duration-200 ${
-                  filter === opt.value
-                    ? "bg-cyan-600/30 text-cyan-300 border-cyan-500/30"
-                    : "bg-dark-900/40 text-dark-400 hover:text-dark-300 hover:bg-dark-800/60"
-                }`}
-              >
-                {opt.label}
-              </button>
-            ))}
-          </div>
+          {didYouMean && (
+            <p className="text-xs text-dark-400 mt-1">
+              Bunu mu demek istediniz: <span className="text-violet-400 cursor-pointer hover:underline" onClick={() => setSearch(didYouMean)}>{didYouMean}</span> ?
+            </p>
+          )}
         </div>
       </div>
 
@@ -198,18 +185,13 @@ export default function TransactionTable({ data, isLoading }) {
                     {formatDate(row.ISLEMTARIHI)}
                   </td>
                   <td className="px-5 py-3.5 font-semibold text-white">
-                    {Number(row.ALACAK).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺
+                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${row.ALACAK < 0 ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
+                      {Number(row.ALACAK).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺
+                    </span>
                   </td>
                   <td className="px-5 py-3.5">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${
-                      row._paymentType === "cash"
-                        ? "bg-emerald-500/15 text-emerald-400"
-                        : row._paymentType === "visa"
-                        ? "bg-violet-500/15 text-violet-400"
-                        : "bg-dark-700 text-dark-400"
-                    }`}>
-                      <span>{row._paymentType === "cash" ? "💵" : row._paymentType === "visa" ? "💳" : "❓"}</span>
-                      {row._paymentLabel}
+                    <span className="text-sm text-dark-300">
+                      {row.IZAHAT || "Tanımsız"}
                     </span>
                   </td>
                 </tr>
