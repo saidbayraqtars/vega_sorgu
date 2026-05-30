@@ -1,7 +1,7 @@
 import { ConnectionProvider, useConnection } from "./context/ConnectionContext";
 import ConnectionForm from "./components/ConnectionForm";
 import PeriodSelector from "./components/PeriodSelector";
-import Dashboard from "./components/Dashboard";
+import AppShell from "./components/AppShell";
 
 import PinLogin from "./components/PinLogin";
 
@@ -25,7 +25,7 @@ function AppContent() {
     case "select-period":
       return <PeriodSelector />;
     case "dashboard":
-      return <Dashboard />;
+      return <AppShell />;
     default:
       return null;
   }

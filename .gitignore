@@ -1,0 +1,21 @@
+# Bağımlılıklar
+node_modules/
+
+# Build çıktıları
+client/dist/
+server/public/assets/
+
+# Çalışma zamanı / hassas
+config.json
+*.log
+
+# Paketlenmiş çıktı
+VegaSorgu.exe
+
+# Geçici / debug scriptleri
+server/_*.js
+server/kasa_columns.txt
+
+# OS
+.DS_Store
+Thumbs.db

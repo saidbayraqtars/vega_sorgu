@@ -4,13 +4,6 @@ const ConnectionContext = createContext(null);
 
 const API_BASE = "/api";
 
-// ─── IZAHAT Mapping ──────────────────────────────────────────
-// Backend'den gelen IZAHAT kodlarını kullanıcı dostu etiketlere çevir
-export const IZAHAT_MAP = {
-  83: { label: "Nakit", type: "cash" },
-  13: { label: "Visa", type: "visa" },
-};
-
 export function ConnectionProvider({ children }) {
   // ─── Application State ──────────────────────────────────────
   const [step, setStep] = useState("loading"); // "loading" | "setup" | "pin-login" | "select-period" | "dashboard"
@@ -23,6 +16,7 @@ export function ConnectionProvider({ children }) {
   const [donemler, setDonemler] = useState([]);
   const [selectedFirma, setSelectedFirma] = useState(null);
   const [selectedDonem, setSelectedDonem] = useState(null);
+  const [currentPage, setCurrentPage] = useState("home"); // sidebar aktif sayfa
 
   // ─── Check Setup ───────────────────────────────────────────
   const checkSetup = useCallback(async () => {
@@ -135,8 +129,20 @@ export function ConnectionProvider({ children }) {
     setSelectedFirma(firmaNo);
     setSelectedDonem(donemNo);
     setStep("dashboard");
+    setCurrentPage("home");
     setError(null);
   }, []);
+
+  // ─── Sidebar'dan firma/dönem değiştir ───────────────────────
+  const switchFirma = useCallback((firmaNo) => {
+    setSelectedFirma(firmaNo);
+    // Yeni firmanın ilk dönemini seç
+    const firma = firmalar.find(f => f.FIRMANO === firmaNo);
+    const firmaDonemler = donemler.filter(d => String(d.FIND) === String(firma?.IND));
+    if (firmaDonemler.length) setSelectedDonem(firmaDonemler[firmaDonemler.length - 1].DONEMNO);
+  }, [firmalar, donemler]);
+
+  const switchDonem = useCallback((donemNo) => setSelectedDonem(donemNo), []);
 
   // ─── Go Back to Selection ───────────────────────────────────
   const goBackToPeriodSelection = useCallback(() => {
@@ -158,40 +164,33 @@ export function ConnectionProvider({ children }) {
 
   // ─── Fetch Summary ──────────────────────────────────────────
   const fetchSummary = useCallback(
-    async (startDate, endDate, subeKodu, allTime = false) => {
+    async (startDate, endDate, allTime = false) => {
       if (!selectedFirma || !selectedDonem) throw new Error("Firma ve Dönem seçilmedi.");
-      try {
-        let url = `${API_BASE}/summary?firmaNo=${selectedFirma}&donemNo=${selectedDonem}&subeKodu=${subeKodu}`;
-        if (allTime) url += `&allTime=true`;
-        else url += `&startDate=${startDate}&endDate=${endDate}`;
-        
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.success) return data.data;
-        throw new Error(data.message);
-      } catch (err) {
-        throw err;
-      }
+      let url = `${API_BASE}/summary?firmaNo=${selectedFirma}&donemNo=${selectedDonem}`;
+      if (allTime) url += `&allTime=true`;
+      else url += `&startDate=${startDate}&endDate=${endDate}`;
+
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) return data.data;
+      throw new Error(data.message);
     },
     [selectedFirma, selectedDonem]
   );
 
   // ─── Fetch Details ──────────────────────────────────────────
+  // type: 'nakit' | 'visa' | 'cekSenet' | 'ciro' | 'allTime'
   const fetchDetails = useCallback(
-    async (startDate, endDate, subeKodu, allTime = false) => {
+    async (startDate, endDate, type = 'allTime', allTime = false) => {
       if (!selectedFirma || !selectedDonem) throw new Error("Firma ve Dönem seçilmedi.");
-      try {
-        let url = `${API_BASE}/details?firmaNo=${selectedFirma}&donemNo=${selectedDonem}&subeKodu=${subeKodu}`;
-        if (allTime) url += `&allTime=true`;
-        else url += `&startDate=${startDate}&endDate=${endDate}`;
+      let url = `${API_BASE}/details?firmaNo=${selectedFirma}&donemNo=${selectedDonem}&type=${type}`;
+      if (allTime) url += `&allTime=true`;
+      else url += `&startDate=${startDate}&endDate=${endDate}`;
 
-        const res = await fetch(url);
-        const data = await res.json();
-        if (data.success) return data.data;
-        throw new Error(data.message);
-      } catch (err) {
-        throw err;
-      }
+      const res = await fetch(url);
+      const data = await res.json();
+      if (data.success) return data.data;
+      throw new Error(data.message);
     },
     [selectedFirma, selectedDonem]
   );
@@ -223,6 +222,7 @@ export function ConnectionProvider({ children }) {
         donemler,
         selectedFirma,
         selectedDonem,
+        currentPage,
 
         // Actions
         setup,
@@ -235,6 +235,9 @@ export function ConnectionProvider({ children }) {
         fetchSummary,
         fetchDetails,
         fetchStok,
+        setCurrentPage,
+        switchFirma,
+        switchDonem,
       }}
     >
       {children}

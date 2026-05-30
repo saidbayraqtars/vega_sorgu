@@ -1,11 +1,12 @@
 import { useState, useMemo } from "react";
 import Fuse from "fuse.js";
+import { getIzahatDetails, IZAHAT_MAP } from "../constants/izahat";
 
 export default function TransactionTable({ data, isLoading, title = "İşlem Detayları" }) {
   const [sortKey, setSortKey] = useState("ISLEMTARIHI");
   const [sortDir, setSortDir] = useState("asc");
   const [search, setSearch] = useState("");
-  const [didYouMean, setDidYouMean] = useState(null);
+  const [izahatFilter, setIzahatFilter] = useState("all");
 
   const handleSort = (key) => {
     if (sortKey === key) {
@@ -16,47 +17,40 @@ export default function TransactionTable({ data, isLoading, title = "İşlem Det
     }
   };
 
-  const filtered = useMemo(() => {
-    if (!data) return [];
+  // Filtreleme + arama + sıralama. didYouMean memo içinde hesaplanıp döndürülür
+  // (render sırasında state set etmemek için).
+  const { rows: filtered, didYouMean } = useMemo(() => {
+    if (!data) return { rows: [], didYouMean: null };
     let rows = [...data];
-    setDidYouMean(null);
+    let suggestion = null;
 
-    // Arama (Fuse.js ile Fuzzy Search)
-    if (search.trim()) {
-      const fuse = new Fuse(rows, {
-        keys: ["IZAHAT", "ALACAK", "ISLEMTARIHI"],
-        threshold: 0.4, // Hata toleransı
-        distance: 100,
-        includeScore: true,
-        ignoreLocation: true,
-        useExtendedSearch: true
-      });
-
-      // Boşlukla ayrılmış kelimeleri AND mantığıyla ara
-      const searchTerms = search.trim().split(/\s+/).map(t => `'${t}`).join(' ');
-      const results = fuse.search(searchTerms);
-
-      // Eğer sonuç yoksa ama toleransla eşleşen bir kelime varsa "Şunu mu demek istediniz?" için normal arama yap
-      if (results.length === 0) {
-        const looseFuse = new Fuse(rows, {
-          keys: ["IZAHAT"],
-          threshold: 0.6, 
-          includeScore: true,
-        });
-        const looseRes = looseFuse.search(search.trim());
-        if (looseRes.length > 0 && looseRes[0].score < 0.6) {
-          // Bulunan en iyi eşleşmedeki kelimelerden birini öner
-          const suggestion = looseRes[0].item.IZAHAT;
-          // Kaba bir şekilde ilk kelimeyi veya mantıklı bir kısmı al
-          const matchWord = suggestion.split(" ").find(w => new Fuse([w], {threshold:0.5}).search(search.split(" ")[0]).length > 0);
-          setDidYouMean(matchWord || suggestion);
-        }
-      }
-
-      rows = results.map(result => result.item);
+    // Dropdown (izahat kodu) filtresi
+    if (izahatFilter !== "all") {
+      rows = rows.filter(r => String(r.BELGEIZAHAT) === izahatFilter);
     }
 
-    // Sıralama
+    // Arama (Fuse.js fuzzy) — gerçek satır alanları üzerinde
+    if (search.trim()) {
+      const fuse = new Fuse(rows, {
+        keys: ["firmaUnvan", "ACIKLAMA", "BELGEIZAHAT", "ALACAK"],
+        threshold: 0.4,
+        distance: 100,
+        ignoreLocation: true,
+        useExtendedSearch: true,
+      });
+      const searchTerms = search.trim().split(/\s+/).map(t => `'${t}`).join(" ");
+      const results = fuse.search(searchTerms);
+
+      if (results.length === 0) {
+        const looseFuse = new Fuse(rows, { keys: ["firmaUnvan", "ACIKLAMA"], threshold: 0.6, includeScore: true });
+        const looseRes = looseFuse.search(search.trim());
+        if (looseRes.length > 0 && looseRes[0].score < 0.6) {
+          suggestion = looseRes[0].item.firmaUnvan || looseRes[0].item.ACIKLAMA || null;
+        }
+      }
+      rows = results.map(r => r.item);
+    }
+
     rows.sort((a, b) => {
       let va = a[sortKey], vb = b[sortKey];
       if (typeof va === "string") va = va.toLowerCase();
@@ -66,8 +60,8 @@ export default function TransactionTable({ data, isLoading, title = "İşlem Det
       return 0;
     });
 
-    return rows;
-  }, [data, sortKey, sortDir, search]);
+    return { rows, didYouMean: suggestion };
+  }, [data, sortKey, sortDir, search, izahatFilter]);
 
   // Toplam hesapla
   const totalAmount = useMemo(() => {
@@ -80,21 +74,19 @@ export default function TransactionTable({ data, isLoading, title = "İşlem Det
   };
 
   const columns = [
-    { key: "ISLEMTARIHI", label: "Tarih / Saat" },
+    { key: "ISLEMTARIHI", label: "Tarih" },
+    { key: "firmaUnvan", label: "Cari Ünvan" },
+    { key: "TUR", label: "Tür" },
     { key: "ALACAK", label: "Tutar (₺)" },
-    { key: "IZAHAT", label: "İzahat" },
+    { key: "BELGEIZAHAT", label: "İzahat" },
   ];
 
-  // Tarih formatlama
+  // Tarih formatlama (TARIH = belge/iş tarihi, gün bazlı)
   function formatDate(dateVal) {
     if (!dateVal) return "—";
     try {
       const d = new Date(dateVal);
-      return d.toLocaleString("tr-TR", {
-        hour: "2-digit",
-        minute: "2-digit",
-        second: "2-digit",
-      });
+      return d.toLocaleDateString("tr-TR", { day: "2-digit", month: "2-digit", year: "numeric" });
     } catch {
       return String(dateVal);
     }
@@ -116,7 +108,21 @@ export default function TransactionTable({ data, isLoading, title = "İşlem Det
           )}
         </div>
 
-        <div className="flex flex-col items-end gap-1 w-full sm:w-auto">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 w-full sm:w-auto">
+          {/* İzahat Filtresi */}
+          <select
+            value={izahatFilter}
+            onChange={(e) => setIzahatFilter(e.target.value)}
+            className="bg-dark-900 border border-white/10 text-white text-sm rounded-xl focus:ring-violet-500 focus:border-violet-500 p-2 outline-none transition-colors duration-200"
+          >
+            <option value="all">Tüm İşlem Türleri</option>
+            {Object.entries(IZAHAT_MAP).map(([code, info]) => (
+              <option key={code} value={code}>
+                {code} - {info.label}
+              </option>
+            ))}
+          </select>
+
           {/* Search */}
           <div className="relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-dark-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -168,7 +174,7 @@ export default function TransactionTable({ data, isLoading, title = "İşlem Det
               ))
             ) : filtered.length === 0 ? (
               <tr>
-                <td colSpan={3} className="px-5 py-16 text-center">
+                <td colSpan={5} className="px-5 py-16 text-center">
                   <div className="flex flex-col items-center gap-3 text-dark-500">
                     <svg className="w-12 h-12 text-dark-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1}>
                       <path strokeLinecap="round" strokeLinejoin="round" d="M20.25 7.5l-.625 10.632a2.25 2.25 0 01-2.247 2.118H6.622a2.25 2.25 0 01-2.247-2.118L3.75 7.5M10 11.25h4M3.375 7.5h17.25c.621 0 1.125-.504 1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125z" />
@@ -179,23 +185,43 @@ export default function TransactionTable({ data, isLoading, title = "İşlem Det
                 </td>
               </tr>
             ) : (
-              filtered.map((row, i) => (
-                <tr key={i} className="border-b border-white/5 table-row-hover">
-                  <td className="px-5 py-3.5 text-dark-300 font-mono text-xs">
-                    {formatDate(row.ISLEMTARIHI)}
-                  </td>
-                  <td className="px-5 py-3.5 font-semibold text-white">
-                    <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${row.ALACAK < 0 ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
-                      {Number(row.ALACAK).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    <span className="text-sm text-dark-300">
-                      {row.IZAHAT || "Tanımsız"}
-                    </span>
-                  </td>
-                </tr>
-              ))
+              filtered.map((row, i) => {
+                const izahatInfo = getIzahatDetails(row.BELGEIZAHAT);
+                return (
+                  <tr key={i} className="border-b border-white/5 table-row-hover">
+                    <td className="px-5 py-3.5 text-dark-300 font-mono text-xs">
+                      {formatDate(row.ISLEMTARIHI)}
+                    </td>
+                    <td className="px-5 py-3.5 text-sm text-dark-300 font-medium">
+                      {row.firmaUnvan || "Belirsiz / Nakit"}
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {izahatInfo.isDevir ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-500/20 text-blue-400 border border-blue-500/30">
+                          Devir İşlemi
+                        </span>
+                      ) : (
+                        <span className="text-xs text-dark-400">Normal</span>
+                      )}
+                    </td>
+                    <td className="px-5 py-3.5 font-semibold text-white">
+                      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold ${row.ALACAK < 0 ? 'bg-red-500/15 text-red-400' : 'bg-emerald-500/15 text-emerald-400'}`}>
+                        {Number(row.ALACAK).toLocaleString("tr-TR", { minimumFractionDigits: 2 })} ₺
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      <div className="flex flex-col">
+                        <span className="font-medium text-white">{izahatInfo.label}</span>
+                        {row.ACIKLAMA && (
+                          <span className="text-xs text-dark-400 mt-0.5" title={row.ACIKLAMA}>
+                            {String(row.ACIKLAMA).length > 30 ? String(row.ACIKLAMA).slice(0, 30) + "..." : row.ACIKLAMA}
+                          </span>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })
             )}
           </tbody>
 
@@ -203,7 +229,7 @@ export default function TransactionTable({ data, isLoading, title = "İşlem Det
           {!isLoading && filtered.length > 0 && (
             <tfoot>
               <tr className="border-t border-white/10 bg-dark-800/30">
-                <td className="px-5 py-3.5 text-xs font-semibold text-dark-400 uppercase">
+                <td colSpan={3} className="px-5 py-3.5 text-xs font-semibold text-dark-400 uppercase">
                   Toplam
                 </td>
                 <td className="px-5 py-3.5 font-bold text-cyan-400">

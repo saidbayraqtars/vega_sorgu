@@ -298,139 +298,567 @@ app.post("/api/disconnect", async (req, res) => {
   }
 });
 
+// İzahat kod grupları (Excel: Vega/Arctos izahat haritası)
+const CARI_KODLAR = [13, 14, 21, 22, 23, 24, 103, 104]; // cari hareket izleme kodları
+const DEVIR_KODLAR = [103, 104];                          // yıl başı açılış (ciroya dahil değil)
+
 // ═══════════════════════════════════════════════════════════════
-// ENDPOINT: Günlük Özet (Nakit Toplamları)
+// ENDPOINT: Günlük Özet (Cari Hareket + Kasa Nakit)
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/summary", async (req, res) => {
   if (!requireConnection(req, res)) return;
 
-  const { startDate, endDate, firmaNo, donemNo, subeKodu, allTime } = req.query;
+  const { startDate, endDate, firmaNo, donemNo, allTime } = req.query;
 
-  if ((!allTime && (!startDate || !endDate)) || !firmaNo || !donemNo || subeKodu === undefined) {
-    return res.status(400).json({ success: false, message: "startDate, endDate (veya allTime), firmaNo, donemNo ve subeKodu parametreleri gerekli." });
+  if ((!allTime && (!startDate || !endDate)) || !firmaNo || !donemNo) {
+    return res.status(400).json({ success: false, message: "startDate, endDate (veya allTime), firmaNo ve donemNo parametreleri gerekli." });
   }
 
-  // Tablo adı oluştur: F[FirmaNo]D[DonemNo]TBLKASA (örn: F0101D0003TBLKASA)
+  const cariHareketTable = `F${firmaNo}D${donemNo}TBLCARIHAREKETLERI`;
   const kasaTable = `F${firmaNo}D${donemNo}TBLKASA`;
-  console.log(`[Summary] Kasa tablosu: ${kasaTable} (firmaNo=${firmaNo}, donemNo=${donemNo})`);
+  console.log(`[Summary] Cari: ${cariHareketTable}, Kasa: ${kasaTable} (firmaNo=${firmaNo}, donemNo=${donemNo})`);
 
-  // Tablo adlarını doğrula (SQL Injection koruması)
-  const isKasaValid = await validateTableName(kasaTable);
+  const [isCariValid, isKasaValid] = await Promise.all([
+    validateTableName(cariHareketTable),
+    validateTableName(kasaTable),
+  ]);
+
+  // Tarih filtresi yardımcısı (TARIH = belge/iş tarihi)
+  const dateFilter = (col) =>
+    allTime === 'true' ? '' : ` AND CAST(${col} AS DATE) >= @startDate AND CAST(${col} AS DATE) <= @endDate`;
 
   try {
-    const request = pool.request();
-    request.input("startDate", sql.Date, startDate);
-    request.input("endDate", sql.Date, endDate);
-    request.input("subeKodu", sql.NVarChar, subeKodu);
+    let izahatGroup = [];
+    let cariNetBakiye = 0; // izlenen kodların net toplamı (devir dahil)
+    let toplamCiro = 0;    // devir hariç
+    let nakitGelir = 0, nakitGider = 0, nakitNet = 0;
 
-    let toplamNakit = 0;
-    // Visa/Cari kısmı iptal edildi
+    // ─── Cari hareketler (Visa, Çek/Senet, Devir) ───────────────
+    if (isCariValid) {
+      const req1 = pool.request();
+      req1.input("startDate", sql.Date, startDate);
+      req1.input("endDate", sql.Date, endDate);
+      const result = await req1.query(`
+        SELECT CAST(IZAHAT AS INT) AS code, ISNULL(SUM(ALACAK - BORC), 0) AS total
+        FROM [${cariHareketTable}]
+        WHERE IZAHAT IN (${CARI_KODLAR.join(',')})${dateFilter('TARIH')}
+        GROUP BY IZAHAT
+      `);
+      izahatGroup = result.recordset;
+      cariNetBakiye = izahatGroup.reduce((s, r) => s + r.total, 0);
+      toplamCiro = izahatGroup
+        .filter(r => !DEVIR_KODLAR.includes(r.code))
+        .reduce((s, r) => s + r.total, 0);
+    }
 
+    // ─── Kasa nakit (GELIR / GIDER) ─────────────────────────────
     if (isKasaValid) {
-      let nakitQuery = `
-        SELECT ISNULL(SUM(GELIR - GIDER), 0) AS toplamNakit
+      const req2 = pool.request();
+      req2.input("startDate", sql.Date, startDate);
+      req2.input("endDate", sql.Date, endDate);
+      const kasaRes = await req2.query(`
+        SELECT ISNULL(SUM(GELIR), 0) AS gelir, ISNULL(SUM(GIDER), 0) AS gider
         FROM [${kasaTable}]
-      `;
-      if (allTime !== 'true') {
-        nakitQuery += ` WHERE CAST(TARIH AS DATE) >= @startDate AND CAST(TARIH AS DATE) <= @endDate`;
-      }
-      const result = await request.query(nakitQuery);
-      if (result.recordset.length > 0) {
-        toplamNakit = result.recordset[0].toplamNakit;
-      }
+        WHERE 1 = 1${dateFilter('TARIH')}
+      `);
+      nakitGelir = kasaRes.recordset[0].gelir;
+      nakitGider = kasaRes.recordset[0].gider;
+      nakitNet = nakitGelir - nakitGider;
+    }
+
+    // ─── Gerçek cari pozisyonu (TBLCARI bakiyeleri, dönemden bağımsız) ───
+    // Pozitif bakiye = alacağımız (müşteri borçlu), negatif = borcumuz (tedarikçi).
+    let cariAlacak = 0, cariBorc = 0, cariNet = 0;
+    const cariTable = `F${firmaNo}TBLCARI`;
+    if (await validateTableName(cariTable)) {
+      const cr = await pool.request().query(`
+        SELECT
+          ISNULL(SUM(CASE WHEN BAKIYE > 0 THEN BAKIYE ELSE 0 END), 0) AS alacak,
+          ISNULL(SUM(CASE WHEN BAKIYE < 0 THEN BAKIYE ELSE 0 END), 0) AS borc,
+          ISNULL(SUM(BAKIYE), 0) AS net
+        FROM [${cariTable}]`);
+      cariAlacak = cr.recordset[0].alacak;
+      cariBorc = cr.recordset[0].borc;
+      cariNet = cr.recordset[0].net;
     }
 
     res.json({
       success: true,
       data: {
-        toplamNakit,
-        toplamVisa: 0, // Frontend kırmamak için 0 dönüyoruz
+        izahatGroup,
+        cariNetBakiye,
+        toplamCiro,
+        nakitGelir,
+        nakitGider,
+        nakitNet,
+        cariAlacak,
+        cariBorc,
+        cariNet,
         startDate,
         endDate,
       },
     });
   } catch (err) {
     console.error("Summary hatası:", err.message);
-
-    try {
-       const colRes = await pool.request().query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '${kasaTable}'`);
-       const cols = colRes.recordset.map(r => r.COLUMN_NAME).join(', ');
-       return res.status(500).json({
-         success: false,
-         message: `Sorgu hatası: ${err.message}. Tablo kolonları şunlar: ${cols}`,
-       });
-    } catch(e) {
-       return res.status(500).json({
-         success: false,
-         message: `Sorgu hatası: ${err.message}`,
-       });
-    }
+    return res.status(500).json({ success: false, message: `Sorgu hatası: ${err.message}` });
   }
 });
 
+// Kart tipi -> cari izahat kodları eşlemesi
+const TYPE_KODLAR = {
+  visa: [13, 14],
+  cekSenet: [21, 22, 23, 24],
+  ciro: [13, 14, 21, 22, 23, 24],   // devir hariç tüm izlenen kodlar
+  allTime: CARI_KODLAR,             // devir dahil
+};
+
 // ═══════════════════════════════════════════════════════════════
-// ENDPOINT: Günlük İşlem Detayları
+// ENDPOINT: İşlem Detayları (type: nakit | visa | cekSenet | ciro | allTime)
+// Normalize satır: { ISLEMTARIHI, ALACAK, ACIKLAMA, BELGEIZAHAT, firmaUnvan }
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/details", async (req, res) => {
   if (!requireConnection(req, res)) return;
 
-  const { startDate, endDate, firmaNo, donemNo, subeKodu, allTime } = req.query;
+  const { startDate, endDate, firmaNo, donemNo, allTime } = req.query;
+  const type = req.query.type || 'allTime';
 
-  if ((!allTime && (!startDate || !endDate)) || !firmaNo || !donemNo || subeKodu === undefined) {
-    return res.status(400).json({ success: false, message: "startDate, endDate (veya allTime), firmaNo, donemNo ve subeKodu parametreleri gerekli." });
+  if ((!allTime && (!startDate || !endDate)) || !firmaNo || !donemNo) {
+    return res.status(400).json({ success: false, message: "startDate, endDate (veya allTime), firmaNo ve donemNo parametreleri gerekli." });
   }
 
-  // Tablo adı oluştur: F[FirmaNo]D[DonemNo]TBLKASA (örn: F0101D0003TBLKASA)
+  const cariHareketTable = `F${firmaNo}D${donemNo}TBLCARIHAREKETLERI`;
+  const cariTable = `F${firmaNo}TBLCARI`;
   const kasaTable = `F${firmaNo}D${donemNo}TBLKASA`;
-  console.log(`[Details] Kasa tablosu: ${kasaTable} (firmaNo=${firmaNo}, donemNo=${donemNo})`);
-  const isKasaValid = await validateTableName(kasaTable);
+  console.log(`[Details] type=${type} firmaNo=${firmaNo} donemNo=${donemNo}`);
+
+  const dateFilter = (col) =>
+    allTime === 'true' ? '' : ` AND CAST(${col} AS DATE) >= @startDate AND CAST(${col} AS DATE) <= @endDate`;
 
   try {
     const request = pool.request();
     request.input("startDate", sql.Date, startDate);
     request.input("endDate", sql.Date, endDate);
-    request.input("subeKodu", sql.NVarChar, subeKodu);
+    let details = [];
 
-    const details = [];
-
-    if (isKasaValid) {
-      let nakitQuery = `
-        SELECT TARIH AS ISLEMTARIHI, (GELIR - GIDER) AS ALACAK, ACIKLAMA AS IZAHAT
-        FROM [${kasaTable}]
-      `;
-      if (allTime !== 'true') {
-        nakitQuery += ` WHERE CAST(TARIH AS DATE) >= @startDate AND CAST(TARIH AS DATE) <= @endDate`;
+    if (type === 'nakit') {
+      // ─── Kasa nakit hareketleri ───────────────────────────────
+      if (await validateTableName(kasaTable)) {
+        const result = await request.query(`
+          SELECT
+            TARIH AS ISLEMTARIHI,
+            (GELIR - GIDER) AS ALACAK,
+            ACIKLAMA,
+            BELGEIZAHAT,
+            ACIKLAMA AS firmaUnvan
+          FROM [${kasaTable}]
+          WHERE 1 = 1${dateFilter('TARIH')}
+        `);
+        details = result.recordset;
       }
-      const result = await request.query(nakitQuery);
-      details.push(...result.recordset);
+    } else {
+      // ─── Cari hareketler ──────────────────────────────────────
+      const kodlar = TYPE_KODLAR[type] || CARI_KODLAR;
+      if (await validateTableName(cariHareketTable)) {
+        const result = await request.query(`
+          SELECT
+            ch.TARIH AS ISLEMTARIHI,
+            (ch.ALACAK - ch.BORC) AS ALACAK,
+            ch.EVRAKNO AS ACIKLAMA,
+            CAST(ch.IZAHAT AS INT) AS BELGEIZAHAT,
+            COALESCE(NULLIF(c.UNVAN, ''), c.FIRMAADI) AS firmaUnvan
+          FROM [${cariHareketTable}] ch
+          LEFT JOIN [${cariTable}] c ON ch.FIRMANO = c.IND
+          WHERE ch.IZAHAT IN (${kodlar.join(',')})${dateFilter('ch.TARIH')}
+        `);
+        details = result.recordset;
+      }
     }
 
     details.sort((a, b) => new Date(a.ISLEMTARIHI) - new Date(b.ISLEMTARIHI));
 
-    res.json({
-      success: true,
-      data: details,
-      count: details.length,
-      startDate,
-      endDate,
-    });
+    res.json({ success: true, data: details, count: details.length, startDate, endDate });
   } catch (err) {
     console.error("Details hatası:", err.message);
-    
-    // Hata durumunda tablonun kolonlarını alıp kullanıcıya gösterelim
-    try {
-       const colRes = await pool.request().query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = '${kasaTable}'`);
-       const cols = colRes.recordset.map(r => r.COLUMN_NAME).join(', ');
-       return res.status(500).json({
-         success: false,
-         message: `Sorgu hatası: ${err.message}. Tablo kolonları şunlar: ${cols}`,
-       });
-    } catch(e) {
-       return res.status(500).json({
-         success: false,
-         message: `Sorgu hatası: ${err.message}`,
-       });
+    return res.status(500).json({ success: false, message: `Sorgu hatası: ${err.message}` });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+//  RAPOR MODÜLLERİ (Cari, Banka, Çek/Senet, Visa, Satış Karlılık)
+// ═══════════════════════════════════════════════════════════════
+
+// Ortak: firma/dönem doğrulama + tablo adı kurucu
+function tableNames(firmaNo, donemNo) {
+  return {
+    cari: `F${firmaNo}TBLCARI`,
+    cariHareket: `F${firmaNo}D${donemNo}TBLCARIHAREKETLERI`,
+    bankalar: `F${firmaNo}TBLBANKALAR`,
+    bankaHareket: `F${firmaNo}D${donemNo}TBLBANKAHAREKETLERI`,
+    cekGiris: `F${firmaNo}D${donemNo}TBLCEKGIRIS`,
+    cekCikis: `F${firmaNo}D${donemNo}TBLCEKCIKIS`,
+    senetGiris: `F${firmaNo}D${donemNo}TBLSENETGIRIS`,
+    senetCikis: `F${firmaNo}D${donemNo}TBLSENETCIKIS`,
+    visaHareket: `F${firmaNo}D${donemNo}TBLVISAHAREKETLERI`,
+    stoklar: `F${firmaNo}TBLSTOKLAR`,
+    stokHareket: `F${firmaNo}D${donemNo}TBLSTOKHAREKETLERI`,
+    satFat: `F${firmaNo}D${donemNo}TBLSATFATHAREKET`,
+  };
+}
+
+// ─── CARİ: Liste (arama + sayfalama) ─────────────────────────
+app.get("/api/cari/list", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, search = "", page = "1" } = req.query;
+  if (!firmaNo) return res.status(400).json({ success: false, message: "firmaNo gerekli." });
+
+  const T = tableNames(firmaNo, "0000");
+  if (!(await validateTableName(T.cari))) return res.status(404).json({ success: false, message: "Cari tablosu bulunamadı." });
+
+  const pageSize = 25;
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const offset = (pageNum - 1) * pageSize;
+
+  try {
+    const request = pool.request();
+    let where = `WHERE ISNULL(DELETED,0)=0`;
+    if (search.trim()) {
+      request.input("s", sql.NVarChar, `%${search.trim()}%`);
+      where += ` AND (FIRMAADI LIKE @s OR UNVAN LIKE @s OR FIRMAKODU LIKE @s OR CAST(IND AS VARCHAR) LIKE @s)`;
     }
+    const countRes = await request.query(`SELECT COUNT(*) AS cnt FROM [${T.cari}] ${where}`);
+    const total = countRes.recordset[0].cnt;
+
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, pageSize);
+    const result = await request.query(`
+      SELECT IND, FIRMAKODU, COALESCE(NULLIF(UNVAN,''), FIRMAADI) AS UNVAN, FIRMAADI,
+             ISNULL(BAKIYE,0) AS BAKIYE, PARABIRIMI
+      FROM [${T.cari}] ${where}
+      ORDER BY FIRMAADI
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
+    `);
+
+    res.json({ success: true, data: result.recordset, total, page: pageNum, pageSize, pageCount: Math.ceil(total / pageSize) });
+  } catch (err) {
+    console.error("cari/list hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── CARİ: Detay (özet + hareketler) ─────────────────────────
+app.get("/api/cari/detail", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo, ind } = req.query;
+  if (!firmaNo || !donemNo || !ind) return res.status(400).json({ success: false, message: "firmaNo, donemNo ve ind gerekli." });
+
+  const T = tableNames(firmaNo, donemNo);
+  try {
+    const r1 = pool.request();
+    r1.input("ind", sql.Int, parseInt(ind));
+    const kart = (await r1.query(`SELECT TOP 1 * FROM [${T.cari}] WHERE IND=@ind`)).recordset[0];
+
+    let ozet = { giris: 0, cikis: 0, net: 0, islem: 0 };
+    let hareketler = [];
+    if (await validateTableName(T.cariHareket)) {
+      const r2 = pool.request();
+      r2.input("ind", sql.Int, parseInt(ind));
+      const o = (await r2.query(`
+        SELECT ISNULL(SUM(BORC),0) giris, ISNULL(SUM(ALACAK),0) cikis,
+               ISNULL(SUM(BORC-ALACAK),0) net, COUNT(*) islem
+        FROM [${T.cariHareket}] WHERE FIRMANO=@ind`)).recordset[0];
+      ozet = o;
+      const r3 = pool.request();
+      r3.input("ind", sql.Int, parseInt(ind));
+      hareketler = (await r3.query(`
+        SELECT TOP 500 TARIH, ISLEMTARIHI, IZAHAT, EVRAKNO, BORC, ALACAK, BAKIYE, PARABIRIMI
+        FROM [${T.cariHareket}] WHERE FIRMANO=@ind ORDER BY TARIH, IND`)).recordset;
+    }
+    res.json({ success: true, data: { kart, ozet, hareketler } });
+  } catch (err) {
+    console.error("cari/detail hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── BANKA: Hesap listesi + bakiye ───────────────────────────
+app.get("/api/banka/list", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo } = req.query;
+  if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
+
+  const T = tableNames(firmaNo, donemNo);
+  if (!(await validateTableName(T.bankalar))) return res.status(404).json({ success: false, message: "Banka tablosu bulunamadı." });
+
+  try {
+    const hasHareket = await validateTableName(T.bankaHareket);
+    const bakiyeJoin = hasHareket
+      ? `LEFT JOIN (SELECT BANKANO, SUM(BORC-ALACAK) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND`
+      : "";
+    const result = await pool.request().query(`
+      SELECT b.IND, b.ADI, b.KOD, b.SUBE, ISNULL(b.SUBEADI,'') SUBEADI, b.IBAN, b.HESAPNO, b.PARABIRIMI,
+             ${hasHareket ? "ISNULL(h.bakiye,0)" : "0"} AS BAKIYE,
+             ${hasHareket ? "ISNULL(h.hareket,0)" : "0"} AS HAREKET
+      FROM [${T.bankalar}] b ${bakiyeJoin}
+      WHERE ISNULL(b.STATUS,1)=1
+      ORDER BY b.ADI`);
+    // Para birimi bazında: net, nakit (artı bakiyeli hesaplar), kredi (eksi bakiyeli hesaplar)
+    const toplam = {}, nakit = {}, kredi = {};
+    let aktif = 0;
+    for (const r of result.recordset) {
+      const pb = r.PARABIRIMI || "TL";
+      toplam[pb] = (toplam[pb] || 0) + r.BAKIYE;
+      if (r.BAKIYE > 0) nakit[pb] = (nakit[pb] || 0) + r.BAKIYE;
+      else if (r.BAKIYE < 0) kredi[pb] = (kredi[pb] || 0) + r.BAKIYE;
+      if (r.HAREKET > 0 || r.BAKIYE !== 0) aktif++;
+    }
+    res.json({ success: true, data: result.recordset, toplam, nakit, kredi, hesapSayisi: aktif });
+  } catch (err) {
+    console.error("banka/list hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── BANKA: Hareketler (filtre + sayfalama) ──────────────────
+app.get("/api/banka/hareket", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo, bankaNo, startDate, endDate, page = "1" } = req.query;
+  if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
+
+  const T = tableNames(firmaNo, donemNo);
+  if (!(await validateTableName(T.bankaHareket))) return res.json({ success: true, data: [], total: 0, page: 1, pageCount: 0, toplam: {} });
+
+  const pageSize = 50;
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const offset = (pageNum - 1) * pageSize;
+
+  try {
+    const request = pool.request();
+    let where = "WHERE 1=1";
+    if (bankaNo) { request.input("bankaNo", sql.Int, parseInt(bankaNo)); where += " AND h.BANKANO=@bankaNo"; }
+    if (startDate && endDate) {
+      request.input("sd", sql.Date, startDate); request.input("ed", sql.Date, endDate);
+      where += " AND CAST(h.TARIH AS DATE) BETWEEN @sd AND @ed";
+    }
+    const totRes = await request.query(`
+      SELECT COUNT(*) cnt, ISNULL(SUM(h.BORC),0) borc, ISNULL(SUM(h.ALACAK),0) alacak
+      FROM [${T.bankaHareket}] h ${where}`);
+    const total = totRes.recordset[0].cnt;
+
+    request.input("offset", sql.Int, offset);
+    request.input("limit", sql.Int, pageSize);
+    const result = await request.query(`
+      SELECT h.TARIH, h.IZAHAT, h.EVRAKNO, h.BORC, h.ALACAK, h.ACIKLAMA, h.PARABIRIMI,
+             b.ADI AS bankaAdi, b.SUBE AS bankaSube
+      FROM [${T.bankaHareket}] h
+      LEFT JOIN [${T.bankalar}] b ON b.IND=h.BANKANO
+      ${where}
+      ORDER BY h.TARIH, h.IND
+      OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`);
+
+    res.json({
+      success: true, data: result.recordset, total, page: pageNum, pageCount: Math.ceil(total / pageSize),
+      toplam: { borc: totRes.recordset[0].borc, alacak: totRes.recordset[0].alacak, net: totRes.recordset[0].borc - totRes.recordset[0].alacak },
+    });
+  } catch (err) {
+    console.error("banka/hareket hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── ÇEK / SENET: Liste (yon: giris|cikis) ───────────────────
+app.get("/api/cek", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo, yon = "giris" } = req.query;
+  if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
+  const T = tableNames(firmaNo, donemNo);
+  const tbl = yon === "cikis" ? T.cekCikis : T.cekGiris;
+  const cari = T.cari;
+  if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0 });
+  try {
+    const banka = T.bankalar;
+    const hasBanka = await validateTableName(banka);
+    const result = await pool.request().query(`
+      SELECT TOP 1000 ck.IND, ck.BELGENO, ck.KESIDEEDEN, ck.KESIDEYERI, ck.SUBE, ck.KESIDETARIHI,
+             ck.BANKAHESAPNO, ck.EVRAKNO, ck.TAKIPNO, ck.FIRMANO,
+             COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan,
+             ${hasBanka ? "b.ADI" : "NULL"} AS bankaAdi
+      FROM [${tbl}] ck
+      LEFT JOIN [${cari}] c ON c.IND = ck.FIRMANO
+      ${hasBanka ? `LEFT JOIN [${banka}] b ON b.IND = ck.BANKA` : ""}
+      ORDER BY ck.KESIDETARIHI DESC`);
+    res.json({ success: true, data: result.recordset, count: result.recordset.length, yon });
+  } catch (err) {
+    console.error("cek hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+app.get("/api/senet", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo, yon = "giris" } = req.query;
+  if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
+  const T = tableNames(firmaNo, donemNo);
+  const tbl = yon === "cikis" ? T.senetCikis : T.senetGiris;
+  const cari = T.cari;
+  if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0 });
+  try {
+    const result = await pool.request().query(`
+      SELECT TOP 1000 sn.BELGENO, sn.KESIDEEDEN, sn.KESIDETARIHI, sn.VERGIDAIRESI, sn.VERGINO,
+             ISNULL(sn.TUTAR,0) AS TUTAR, sn.FIRMANO, COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan
+      FROM [${tbl}] sn
+      LEFT JOIN [${cari}] c ON c.IND = sn.FIRMANO
+      ORDER BY sn.KESIDETARIHI DESC`);
+    const toplam = result.recordset.reduce((s, r) => s + (r.TUTAR || 0), 0);
+    res.json({ success: true, data: result.recordset, count: result.recordset.length, toplam, yon });
+  } catch (err) {
+    console.error("senet hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── VİSA: Cari hareketlerden Visa (izahat 13/14) ────────────
+app.get("/api/visa", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo, startDate, endDate } = req.query;
+  if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
+  const T = tableNames(firmaNo, donemNo);
+  if (!(await validateTableName(T.cariHareket))) return res.json({ success: true, data: [], toplam: {} });
+  try {
+    const request = pool.request();
+    let where = "WHERE ch.IZAHAT IN (13,14)";
+    if (startDate && endDate) {
+      request.input("sd", sql.Date, startDate); request.input("ed", sql.Date, endDate);
+      where += " AND CAST(ch.TARIH AS DATE) BETWEEN @sd AND @ed";
+    }
+    const result = await request.query(`
+      SELECT TOP 1000 ch.TARIH, ch.EVRAKNO, ch.IZAHAT, ch.BORC, ch.ALACAK,
+             COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan
+      FROM [${T.cariHareket}] ch
+      LEFT JOIN [${T.cari}] c ON c.IND=ch.FIRMANO
+      ${where} ORDER BY ch.TARIH DESC`);
+    const borc = result.recordset.reduce((s, r) => s + (r.BORC || 0), 0);
+    const alacak = result.recordset.reduce((s, r) => s + (r.ALACAK || 0), 0);
+    res.json({ success: true, data: result.recordset, toplam: { borc, alacak, net: alacak - borc } });
+  } catch (err) {
+    console.error("visa hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── SATIŞ KARLILIK ──────────────────────────────────────────
+app.get("/api/satis-karlilik", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo, startDate, endDate, search = "" } = req.query;
+  if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
+  const T = tableNames(firmaNo, donemNo);
+  if (!(await validateTableName(T.satFat))) return res.json({ success: true, data: [], ozet: {} });
+  try {
+    const request = pool.request();
+    let dateF = "", mDateF = "";
+    if (startDate && endDate) {
+      request.input("sd", sql.Date, startDate); request.input("ed", sql.Date, endDate);
+      dateF = " AND CAST(sf.TARIH AS DATE) BETWEEN @sd AND @ed";
+      mDateF = " AND CAST(TARIH AS DATE) BETWEEN @sd AND @ed";
+    }
+    let searchF = "";
+    if (search.trim()) { request.input("q", sql.NVarChar, `%${search.trim()}%`); searchF = " AND (sf.MALINCINSI LIKE @q OR sf.STOKKODU LIKE @q)"; }
+
+    // Gelir: satış faturası (GERCEKTOPLAM). Maliyet: SADECE satış çıkışı (IZAHAT=21) hareketleri;
+    // bu satırlarda TUTAR = miktar × birim maliyet (COGS). Üretim sarfı (33), devir (103/104) vb. hariç.
+    const result = await request.query(`
+      WITH gelir AS (
+        SELECT STOKNO, MAX(MALINCINSI) malincinsi, MAX(STOKKODU) stokkodu,
+               SUM(MIKTAR) miktar, SUM(GERCEKTOPLAM) satis
+        FROM [${T.satFat}] sf WHERE 1=1 ${dateF} ${searchF} GROUP BY STOKNO
+      ),
+      maliyet AS (
+        SELECT STOKNO, SUM(TUTAR) maliyet, SUM(CIKAN) cikan
+        FROM [${T.stokHareket}] WHERE IZAHAT='21' AND CIKAN>0 AND ISNULL(IADE,0)=0 ${mDateF}
+        GROUP BY STOKNO
+      )
+      SELECT TOP 500 g.STOKNO, g.malincinsi, g.stokkodu, g.miktar, g.satis,
+             ISNULL(m.maliyet,0) maliyet,
+             CASE WHEN g.miktar<>0 THEN ISNULL(m.maliyet,0)/g.miktar ELSE 0 END birimMaliyet,
+             (g.satis - ISNULL(m.maliyet,0)) kar
+      FROM gelir g LEFT JOIN maliyet m ON m.STOKNO=g.STOKNO
+      ORDER BY g.satis DESC`);
+
+    const ozet = result.recordset.reduce((a, r) => {
+      a.satis += r.satis || 0; a.maliyet += r.maliyet || 0; a.kar += r.kar || 0; return a;
+    }, { satis: 0, maliyet: 0, kar: 0 });
+    ozet.marj = ozet.satis ? (ozet.kar / ozet.satis) * 100 : 0;
+
+    res.json({ success: true, data: result.recordset, ozet });
+  } catch (err) {
+    console.error("satis-karlilik hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── ANA SAYFA: Özet ─────────────────────────────────────────
+app.get("/api/home", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo } = req.query;
+  if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
+  const T = tableNames(firmaNo, donemNo);
+  try {
+    const out = { bankaToplam: {}, bankaNakit: {}, bankaKredi: {}, hesapSayisi: 0, cekSayisi: 0, senetSayisi: 0, visaSayisi: 0, visaToplam: 0 };
+
+    if (await validateTableName(T.bankalar) && await validateTableName(T.bankaHareket)) {
+      // Hesap bazında bakiye → para birimi bazında net / nakit (artı) / kredi (eksi)
+      const b = await pool.request().query(`
+        SELECT b.PARABIRIMI, ISNULL(h.bakiye,0) bakiye, ISNULL(h.hareket,0) hareket
+        FROM [${T.bankalar}] b
+        LEFT JOIN (SELECT BANKANO, SUM(BORC-ALACAK) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND
+        WHERE ISNULL(b.STATUS,1)=1`);
+      b.recordset.forEach(r => {
+        const pb = r.PARABIRIMI || "TL";
+        out.bankaToplam[pb] = (out.bankaToplam[pb] || 0) + r.bakiye;
+        if (r.bakiye > 0) out.bankaNakit[pb] = (out.bankaNakit[pb] || 0) + r.bakiye;
+        else if (r.bakiye < 0) out.bankaKredi[pb] = (out.bankaKredi[pb] || 0) + r.bakiye;
+        if (r.hareket > 0 || r.bakiye !== 0) out.hesapSayisi++;
+      });
+    }
+    if (await validateTableName(T.cekGiris)) out.cekSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.cekGiris}]`)).recordset[0].n;
+    if (await validateTableName(T.senetGiris)) out.senetSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.senetGiris}]`)).recordset[0].n;
+    if (await validateTableName(T.cariHareket)) {
+      const v = (await pool.request().query(`SELECT COUNT(*) n, ISNULL(SUM(ALACAK),0) t FROM [${T.cariHareket}] WHERE IZAHAT IN (13,14)`)).recordset[0];
+      out.visaSayisi = v.n; out.visaToplam = v.t;
+    }
+    res.json({ success: true, data: out });
+  } catch (err) {
+    console.error("home hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
+  }
+});
+
+// ─── SON İŞLEMLER: En güncel cari hareketler (sayfalama) ─────
+app.get("/api/son-islemler", async (req, res) => {
+  if (!requireConnection(req, res)) return;
+  const { firmaNo, donemNo, limit = "10", page = "1" } = req.query;
+  if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
+  const T = tableNames(firmaNo, donemNo);
+  if (!(await validateTableName(T.cariHareket))) return res.json({ success: true, data: [], total: 0, page: 1, pageCount: 0 });
+
+  const pageSize = Math.min(200, Math.max(1, parseInt(limit) || 10));
+  const pageNum = Math.max(1, parseInt(page) || 1);
+  const offset = (pageNum - 1) * pageSize;
+  try {
+    const totRes = await pool.request().query(`SELECT COUNT(*) cnt FROM [${T.cariHareket}]`);
+    const total = totRes.recordset[0].cnt;
+    const result = await pool.request()
+      .input("offset", sql.Int, offset).input("limit", sql.Int, pageSize)
+      .query(`
+        SELECT ch.TARIH, ch.IZAHAT, ch.EVRAKNO, ch.BORC, ch.ALACAK,
+               COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan
+        FROM [${T.cariHareket}] ch
+        LEFT JOIN [${T.cari}] c ON c.IND = ch.FIRMANO
+        ORDER BY ch.TARIH DESC, ch.IND DESC
+        OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`);
+    res.json({ success: true, data: result.recordset, total, page: pageNum, pageCount: Math.ceil(total / pageSize) });
+  } catch (err) {
+    console.error("son-islemler hatası:", err.message);
+    res.status(500).json({ success: false, message: err.message });
   }
 });
 

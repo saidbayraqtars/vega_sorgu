@@ -1,0 +1,36 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node _diag.js)",
+      "PowerShell(\"----FILES----\")",
+      "PowerShell(Get-ChildItem -LiteralPath \"c:\\\\Users\\\\saidb\\\\Desktop\\\\projeler\\\\vega_sorgu\" -Force | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem -LiteralPath \"c:\\\\Users\\\\saidb\\\\Desktop\\\\projeler\\\\vega_sorgu\\\\görseller\" -Force | ForEach-Object { $_.Name })",
+      "PowerShell(Get-Process -Name \"VegaSorgu\" -ErrorAction SilentlyContinue)",
+      "PowerShell(Stop-Process -Force)",
+      "PowerShell(\"stopped\")",
+      "PowerShell($f=\"c:\\\\Users\\\\saidb\\\\Desktop\\\\projeler\\\\vega_sorgu\\\\VegaSorgu.exe\"; if \\(Test-Path $f\\) { \"{0:N1} MB  {1}\" -f \\(\\(Get-Item $f\\).Length/1MB\\), \\(Get-Item $f\\).LastWriteTime } else { \"MISSING\" })",
+      "Bash(./VegaSorgu.exe)",
+      "Bash(curl -s -c /tmp/vc.txt -X POST http://localhost:3001/api/login -H \"Content-Type: application/json\" -d '{\"pin\":\"962110\"}')",
+      "Bash(curl -s -b /tmp/vc.txt \"http://localhost:3001/api/satis-karlilik?firmaNo=0102&donemNo=0011\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('ozet:',JSON.stringify\\(j.ozet\\)\\);console.log\\('row0:',JSON.stringify\\(j.data[0]\\)\\)}\\)\")",
+      "Bash(curl -s -b /tmp/vc.txt \"http://localhost:3001/api/banka/list?firmaNo=0102&donemNo=0011\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('nakit:',JSON.stringify\\(j.nakit\\),'kredi:',JSON.stringify\\(j.kredi\\),'toplam:',JSON.stringify\\(j.toplam\\),'aktif:',j.hesapSayisi\\)}\\)\")",
+      "Bash(curl -s -b /tmp/vc.txt \"http://localhost:3001/api/home?firmaNo=0102&donemNo=0011\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\).data;console.log\\('nakit:',JSON.stringify\\(j.bankaNakit\\),'kredi:',JSON.stringify\\(j.bankaKredi\\),'aktif:',j.hesapSayisi\\)}\\)\")",
+      "Bash(powershell -Command \"Get-Process VegaSorgu -ErrorAction SilentlyContinue | Stop-Process -Force\")",
+      "Bash(rm -f /tmp/vc.txt)",
+      "Read(//c/Users/saidb/.claude/projects/c--Users-saidb-Desktop-projeler-vega-sorgu/memory/**)",
+      "Bash(node server/_diag.js)",
+      "Bash(curl -s -b /tmp/vc.txt \"http://localhost:3001/api/son-islemler?firmaNo=0102&donemNo=0011&limit=10\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('total:',j.total,'pageCount:',j.pageCount,'row0:',JSON.stringify\\(j.data[0]\\)\\)}\\)\")",
+      "Bash(curl -s -b /tmp/vc.txt \"http://localhost:3001/api/cek?firmaNo=0102&donemNo=0011&yon=giris\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\);console.log\\('count:',j.count,'row0:',JSON.stringify\\(j.data[0]\\)\\)}\\)\")",
+      "Bash(curl -s -b /tmp/vc.txt \"http://localhost:3001/api/summary?firmaNo=0102&donemNo=0011&allTime=true&startDate=2026-01-01&endDate=2026-12-31\")",
+      "Bash(node -e \"let d='';process.stdin.on\\('data',c=>d+=c\\).on\\('end',\\(\\)=>{const j=JSON.parse\\(d\\).data;console.log\\('cariNet:',j.cariNet,'alacak:',j.cariAlacak,'borc:',j.cariBorc\\)}\\)\")",
+      "PowerShell($f=\"c:\\\\Users\\\\saidb\\\\Desktop\\\\projeler\\\\vega_sorgu\\\\VegaSorgu.exe\"; \"{0:N1} MB  {1}\" -f \\(\\(Get-Item $f\\).Length/1MB\\), \\(Get-Item $f\\).LastWriteTime)",
+      "PowerShell(Write-Output \"PWD: $\\(Get-Location\\)\"; Get-ChildItem \"c:\\\\Users\\\\saidb\\\\Desktop\\\\projeler\\\\vega_sorgu\\\\server\\\\public\\\\assets\" | ForEach-Object { Write-Output $_.Name })",
+      "PowerShell(Get-Item \"c:\\\\Users\\\\saidb\\\\Desktop\\\\projeler\\\\vega_sorgu\\\\VegaSorgu.exe\" | Select-Object Name, @{n=\"MB\";e={[math]::Round\\($_.Length/1MB,1\\)}}, LastWriteTime)",
+      "PowerShell($f = Get-Item \"c:\\\\Users\\\\saidb\\\\Desktop\\\\projeler\\\\vega_sorgu\\\\VegaSorgu.exe\"; Write-Output \"$\\($f.Name\\)  $\\([math]::Round\\($f.Length/1MB,1\\)\\) MB  $\\($f.LastWriteTime\\)\")"
+    ]
+  }
+}
