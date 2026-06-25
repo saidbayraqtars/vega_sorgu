@@ -179,7 +179,7 @@ export function ConnectionProvider({ children }) {
   );
 
   // ─── Fetch Details ──────────────────────────────────────────
-  // type: 'nakit' | 'visa' | 'cekSenet' | 'ciro' | 'allTime'
+  // type: 'nakit' | 'ciro' | 'tahsilat' | 'alis' | 'allTime'
   const fetchDetails = useCallback(
     async (startDate, endDate, type = 'allTime', allTime = false) => {
       if (!selectedFirma || !selectedDonem) throw new Error("Firma ve Dönem seçilmedi.");

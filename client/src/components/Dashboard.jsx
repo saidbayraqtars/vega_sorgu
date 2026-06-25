@@ -29,7 +29,7 @@ export default function Dashboard() {
   const [details, setDetails] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-  const [expandedCard, setExpandedCard] = useState(null); // 'allTime' | 'nakit' | 'ciro' | 'visa' | 'cekSenet' | null
+  const [expandedCard, setExpandedCard] = useState(null); // 'allTime' | 'nakit' | 'ciro' | 'tahsilat' | 'alis' | null
 
   const loadSummaries = useCallback(async (start, end) => {
     setLoading(true);
@@ -90,7 +90,7 @@ export default function Dashboard() {
   // Seçili günde hiç hareket var mı? (özet yüklendiyse ve hiçbir kalemde değer yoksa)
   const hasActivity = !!summary && (
     (summary.izahatGroup?.length || 0) > 0 ||
-    Number(summary.nakitGelir) || Number(summary.nakitGider) || Number(summary.toplamCiro)
+    Number(summary.nakitGelir) || Number(summary.nakitGider) || Number(summary.ciro)
   );
   const showEmpty = !loading && !expandedCard && summary && !hasActivity;
 
@@ -165,9 +165,9 @@ export default function Dashboard() {
             title={
               expandedCard === "allTime" ? "Tüm Zamanların Cari Hareketleri" :
               expandedCard === "nakit" ? "Kasa Nakit Hareketleri" :
-              expandedCard === "visa" ? "Visa İşlem Detayları" :
-              expandedCard === "cekSenet" ? "Çek/Senet İşlem Detayları" :
-              expandedCard === "ciro" ? "Günlük Ciro Detayları" :
+              expandedCard === "tahsilat" ? "Tahsilat Detayları" :
+              expandedCard === "alis" ? "Alış Faturası Detayları" :
+              expandedCard === "ciro" ? "Satış (Ciro) Detayları" :
               "İşlem Detayları"
             }
           />

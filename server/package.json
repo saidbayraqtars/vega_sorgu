@@ -1,6 +1,6 @@
 {
   "name": "vega-sorgu-server",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Vega Win A5 SQL Express Dashboard - Backend API",
   "main": "server.js",
   "bin": "server.js",

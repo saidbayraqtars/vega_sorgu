@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import { useConnection } from "../context/ConnectionContext";
 import { apiGet, formatTL, formatDate } from "../utils/api";
 
-export default function VisaRaporlari() {
+export default function TahsilatRaporlari() {
   const { selectedFirma, selectedDonem } = useConnection();
   const [startDate, setStartDate] = useState("");
   const [endDate, setEndDate] = useState("");
@@ -16,7 +16,7 @@ export default function VisaRaporlari() {
   useEffect(() => {
     let on = true;
     setLoading(true); setError(null);
-    apiGet("/visa", { firmaNo: selectedFirma, donemNo: selectedDonem, ...filtre })
+    apiGet("/tahsilat", { firmaNo: selectedFirma, donemNo: selectedDonem, ...filtre })
       .then(r => { if (on) setRes(r); })
       .catch(e => { if (on) setError(e.message); })
       .finally(() => { if (on) setLoading(false); });
@@ -26,8 +26,8 @@ export default function VisaRaporlari() {
   return (
     <div className="p-8 space-y-6">
       <div>
-        <h1 className="text-3xl font-bold text-white">Visa Raporları</h1>
-        <p className="text-dark-400 mt-1">Kredi kartı (POS) tahsilat ve iadeleri — cari hareket izahat 13/14</p>
+        <h1 className="text-3xl font-bold text-white">Tahsilat Raporları</h1>
+        <p className="text-dark-400 mt-1">Cari giriş/tahsilat (13) ve çıkış/tediye (11) hareketleri</p>
       </div>
 
       <div className="glass-card p-5 flex flex-wrap items-end gap-3">
@@ -43,7 +43,7 @@ export default function VisaRaporlari() {
 
       <div className="grid grid-cols-3 gap-4">
         <div className="rounded-xl bg-dark-800/60 border border-white/5 p-4"><p className="text-xs text-dark-400">Toplam Tahsilat (Alacak)</p><p className="text-lg font-bold text-emerald-400 mt-1">{formatTL(res.toplam.alacak || 0)}</p></div>
-        <div className="rounded-xl bg-dark-800/60 border border-white/5 p-4"><p className="text-xs text-dark-400">Toplam İade (Borç)</p><p className="text-lg font-bold text-red-400 mt-1">{formatTL(res.toplam.borc || 0)}</p></div>
+        <div className="rounded-xl bg-dark-800/60 border border-white/5 p-4"><p className="text-xs text-dark-400">Toplam Tediye (Borç)</p><p className="text-lg font-bold text-red-400 mt-1">{formatTL(res.toplam.borc || 0)}</p></div>
         <div className="rounded-xl bg-dark-800/60 border border-white/5 p-4"><p className="text-xs text-dark-400">Net</p><p className="text-lg font-bold text-cyan-400 mt-1">{formatTL(res.toplam.net || 0)}</p></div>
       </div>
 
@@ -62,7 +62,7 @@ export default function VisaRaporlari() {
                   <td className="px-4 py-3 text-dark-300 font-mono text-xs">{formatDate(h.TARIH)}</td>
                   <td className="px-4 py-3 text-dark-200">{h.cariUnvan || "—"}</td>
                   <td className="px-4 py-3 text-dark-400 font-mono text-xs">{h.EVRAKNO}</td>
-                  <td className="px-4 py-3 text-dark-300">{h.IZAHAT === "13" ? "Visa Tahsilat" : h.IZAHAT === "14" ? "Visa İade" : h.IZAHAT}</td>
+                  <td className="px-4 py-3 text-dark-300">{String(h.IZAHAT) === "13" ? "Tahsilat (Cari Giriş)" : String(h.IZAHAT) === "11" ? "Tediye (Cari Çıkış)" : h.IZAHAT}</td>
                   <td className="px-4 py-3 text-right text-emerald-400">{h.ALACAK ? formatTL(h.ALACAK) : "—"}</td>
                   <td className="px-4 py-3 text-right text-red-400">{h.BORC ? formatTL(h.BORC) : "—"}</td>
                 </tr>

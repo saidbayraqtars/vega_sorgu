@@ -10,7 +10,7 @@ const MODULES = [
   { id: "bankaHareket", title: "Banka Hareketleri", desc: "Gelir ve gider hareketleri", grad: "from-violet-600/20 to-purple-800/20", clr: "text-violet-400" },
   { id: "cek", title: "Çek Raporları", desc: "Alınan ve verilen çekler", grad: "from-rose-600/20 to-red-800/20", clr: "text-rose-400" },
   { id: "satis", title: "Satış Karlılık", desc: "Stok bazlı kâr analizi", grad: "from-pink-600/20 to-fuchsia-800/20", clr: "text-pink-400" },
-  { id: "visa", title: "Visa Raporları", desc: "Kredi kartı tahsilatları", grad: "from-indigo-600/20 to-blue-800/20", clr: "text-indigo-400" },
+  { id: "tahsilat", title: "Tahsilat Raporları", desc: "Cari tahsilat ve tediyeler", grad: "from-indigo-600/20 to-blue-800/20", clr: "text-indigo-400" },
 ];
 
 function StatCard({ title, value, sub, clr, grad, onClick }) {
@@ -72,10 +72,10 @@ export default function Home() {
         <StatCard title="Senet Kayıtları" grad="from-amber-600/20 to-orange-800/20" clr="text-amber-400"
           onClick={() => setCurrentPage("senet")}
           value={loading ? "…" : formatNumber(data?.senetSayisi || 0, 0)} sub="Alınan senetler" />
-        <StatCard title="Visa İşlemleri" grad="from-violet-600/20 to-purple-800/20" clr="text-violet-400"
-          onClick={() => setCurrentPage("visa")}
-          value={loading ? "…" : formatNumber(data?.visaSayisi || 0, 0)}
-          sub={loading ? "" : `Toplam ${formatTL(data?.visaToplam || 0)}`} />
+        <StatCard title="Tahsilatlar" grad="from-violet-600/20 to-purple-800/20" clr="text-violet-400"
+          onClick={() => setCurrentPage("tahsilat")}
+          value={loading ? "…" : formatNumber(data?.tahsilatSayisi || 0, 0)}
+          sub={loading ? "" : `Toplam ${formatTL(data?.tahsilatToplam || 0)}`} />
       </div>
 
       <div>

@@ -22,15 +22,6 @@ function AnimatedNumber({ value, suffix = "" }) {
 }
 
 export default function SummaryCards({ summary, allTimeSummary, isLoading, expandedCard, setExpandedCard }) {
-  const getGroupTotal = (groups, codes) => {
-    if (!groups || !Array.isArray(groups)) return 0;
-    return groups.filter(g => codes.includes(g.code)).reduce((acc, curr) => acc + curr.total, 0);
-  };
-
-  const izahats = summary?.izahatGroup || [];
-  const visaTotal = getGroupTotal(izahats, [13, 14]);
-  const cekSenetTotal = getGroupTotal(izahats, [21, 22, 23, 24]);
-
   // Tüm zamanlar kapsamındaki kart — günlük kartlardan ayrı bir şeritte gösterilir
   const allTimeCard = {
     id: "allTime", title: "Cari Net Pozisyon", emoji: "🏛️", value: allTimeSummary?.cariNet ?? 0,
@@ -49,25 +40,25 @@ export default function SummaryCards({ summary, allTimeSummary, isLoading, expan
       subtitle: `Giriş ${(summary?.nakitGelir ?? 0).toLocaleString("tr-TR")} / Çıkış ${(summary?.nakitGider ?? 0).toLocaleString("tr-TR")}`,
     },
     {
-      id: "ciro", title: "Günlük Ciro", emoji: "📈", value: summary?.toplamCiro ?? 0,
+      id: "ciro", title: "Günlük Ciro (Satış)", emoji: "📈", value: summary?.ciro ?? 0,
       icon: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" /></svg>,
       grad: "from-purple-500/20 to-pink-700/20", border: "border-purple-500/20",
       iconBg: "bg-purple-500/15", iconClr: "text-purple-400", valClr: "text-purple-400",
-      subtitle: "Sıcak satışlar (Devir hariç)",
+      subtitle: "Satış faturaları (izahat 21)",
     },
     {
-      id: "visa", title: "Visa (POS) Toplamı", emoji: "💳", value: visaTotal,
+      id: "tahsilat", title: "Günlük Tahsilat", emoji: "💳", value: summary?.tahsilat ?? 0,
       icon: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z" /></svg>,
       grad: "from-amber-500/20 to-orange-700/20", border: "border-amber-500/20",
       iconBg: "bg-amber-500/15", iconClr: "text-amber-400", valClr: "text-amber-400",
-      subtitle: "Kredi kartı cirosu",
+      subtitle: "Cari giriş / tahsilat (izahat 13)",
     },
     {
-      id: "cekSenet", title: "Çek / Senet Toplamı", emoji: "📄", value: cekSenetTotal,
-      icon: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" /></svg>,
+      id: "alis", title: "Günlük Alış", emoji: "🛒", value: summary?.alis ?? 0,
+      icon: <svg className="w-7 h-7" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 3h1.386c.51 0 .955.343 1.087.835l.383 1.437M7.5 14.25a3 3 0 00-3 3h15.75m-12.75-3h11.218c1.121-2.3 2.1-4.684 2.924-7.138a60.114 60.114 0 00-16.536-1.84M7.5 14.25L5.106 5.272M6 20.25a.75.75 0 11-1.5 0 .75.75 0 011.5 0zm12.75 0a.75.75 0 11-1.5 0 .75.75 0 011.5 0z" /></svg>,
       grad: "from-rose-500/20 to-red-700/20", border: "border-rose-500/20",
       iconBg: "bg-rose-500/15", iconClr: "text-rose-400", valClr: "text-rose-400",
-      subtitle: "Gelen/giden evraklar",
+      subtitle: "Alış faturaları (izahat 20)",
     }
   ];
 

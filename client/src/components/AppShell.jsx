@@ -4,7 +4,7 @@ import Home from "../pages/Home";
 import CariKartlar from "../pages/CariKartlar";
 import BankaRaporlari from "../pages/BankaRaporlari";
 import BankaHareket from "../pages/BankaHareket";
-import VisaRaporlari from "../pages/VisaRaporlari";
+import TahsilatRaporlari from "../pages/VisaRaporlari";
 import CekRaporlari from "../pages/CekRaporlari";
 import SenetPortfoy from "../pages/SenetPortfoy";
 import SatisKarlilik from "../pages/SatisKarlilik";
@@ -17,7 +17,7 @@ const PAGES = {
   cari: CariKartlar,
   banka: BankaRaporlari,
   bankaHareket: BankaHareket,
-  visa: VisaRaporlari,
+  tahsilat: TahsilatRaporlari,
   cek: CekRaporlari,
   senet: SenetPortfoy,
   satis: SatisKarlilik,

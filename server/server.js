@@ -298,8 +298,27 @@ app.post("/api/disconnect", async (req, res) => {
   }
 });
 
-// İzahat kod grupları (Excel: Vega/Arctos izahat haritası)
-const CARI_KODLAR = [13, 14, 21, 22, 23, 24, 103, 104]; // cari hareket izleme kodları
+// ─── Vega/Arctos TBLCARIHAREKETLERI standart izahat kodları ──
+// Canlı doğrulandı (F0101, EVRAKNO=BELGENO join ile): 21=Satış Faturası 2444/2444
+// SATFATBASLIK'ta, 20=Alış Faturası 1941/1941 ALFATBASLIK'ta eşleşti.
+const IZ = {
+  TEDIYE: 11,       // Cari Çıkış / Tediye (BORC) — biz ödedik
+  TAHSILAT: 13,     // Cari Giriş / Tahsilat (ALACAK) — ödeme aldık
+  ALIS: 20,         // Alış Faturası (ALACAK)
+  SATIS: 21,        // Satış Faturası (BORC) — ciro/gelir
+  ALIS_IADE: 22,    // Alış İade (ALACAK)
+  SATIS_IADE: 23,   // Satış İade (BORC)
+  STOK_GIRIS: 32,   // Stok Giriş Fişi (ALACAK)
+  STOK_CIKIS: 33,   // Stok Çıkış Fişi (BORC)
+  MANUEL: 83,       // Manuel / Mahsup
+  DEVIR_GIRIS: 103, // Cari Devir Giriş (açılış)
+  DEVIR_CIKIS: 104, // Cari Devir Çıkış (açılış)
+};
+// NOT: Eski [13,14]=Visa, [21,22,23,24]=Çek/Senet haritası YANLIŞTI. Çek/senet
+// kendi tablolarında (TBLCEK*/TBLSENET*). 14 ve 24 bu DB'de hiç yok.
+
+// Cari hareket izleme kodları (ciro+tahsilat+alış+tediye+iade+devir)
+const CARI_KODLAR = [11, 13, 20, 21, 22, 23, 103, 104];
 const DEVIR_KODLAR = [103, 104];                          // yıl başı açılış (ciroya dahil değil)
 
 // ═══════════════════════════════════════════════════════════════
@@ -330,25 +349,31 @@ app.get("/api/summary", async (req, res) => {
   try {
     let izahatGroup = [];
     let cariNetBakiye = 0; // izlenen kodların net toplamı (devir dahil)
-    let toplamCiro = 0;    // devir hariç
+    let ciro = 0;          // Satış Faturası (21) BORC — gerçek gelir
+    let tahsilat = 0;      // Cari Giriş/Tahsilat (13) ALACAK
+    let alis = 0;          // Alış Faturası (20) ALACAK
     let nakitGelir = 0, nakitGider = 0, nakitNet = 0;
 
-    // ─── Cari hareketler (Visa, Çek/Senet, Devir) ───────────────
+    // ─── Cari hareketler (izahat bazında borç/alacak) ───────────
     if (isCariValid) {
       const req1 = pool.request();
       req1.input("startDate", sql.Date, startDate);
       req1.input("endDate", sql.Date, endDate);
       const result = await req1.query(`
-        SELECT CAST(IZAHAT AS INT) AS code, ISNULL(SUM(ALACAK - BORC), 0) AS total
+        SELECT CAST(IZAHAT AS INT) AS code,
+               ISNULL(SUM(BORC), 0)   AS borc,
+               ISNULL(SUM(ALACAK), 0) AS alacak,
+               ISNULL(SUM(ALACAK - BORC), 0) AS total
         FROM [${cariHareketTable}]
         WHERE IZAHAT IN (${CARI_KODLAR.join(',')})${dateFilter('TARIH')}
         GROUP BY IZAHAT
       `);
       izahatGroup = result.recordset;
       cariNetBakiye = izahatGroup.reduce((s, r) => s + r.total, 0);
-      toplamCiro = izahatGroup
-        .filter(r => !DEVIR_KODLAR.includes(r.code))
-        .reduce((s, r) => s + r.total, 0);
+      const codeSum = (code, field) => izahatGroup.filter(r => r.code === code).reduce((s, r) => s + (r[field] || 0), 0);
+      ciro = codeSum(IZ.SATIS, 'borc');        // satış faturası borç = gelir
+      tahsilat = codeSum(IZ.TAHSILAT, 'alacak'); // tahsilat alacak
+      alis = codeSum(IZ.ALIS, 'alacak');         // alış faturası alacak
     }
 
     // ─── Kasa nakit (GELIR / GIDER) ─────────────────────────────
@@ -387,7 +412,9 @@ app.get("/api/summary", async (req, res) => {
       data: {
         izahatGroup,
         cariNetBakiye,
-        toplamCiro,
+        ciro,
+        tahsilat,
+        alis,
         nakitGelir,
         nakitGider,
         nakitNet,
@@ -404,13 +431,19 @@ app.get("/api/summary", async (req, res) => {
   }
 });
 
-// Kart tipi -> cari izahat kodları eşlemesi
+// Kart tipi -> cari izahat kodları eşlemesi (doğrulanmış standart kodlar)
 const TYPE_KODLAR = {
-  visa: [13, 14],
-  cekSenet: [21, 22, 23, 24],
-  ciro: [13, 14, 21, 22, 23, 24],   // devir hariç tüm izlenen kodlar
-  allTime: CARI_KODLAR,             // devir dahil
+  ciro: [IZ.SATIS],       // Satış Faturası (21)
+  tahsilat: [IZ.TAHSILAT], // Cari Giriş/Tahsilat (13)
+  alis: [IZ.ALIS],        // Alış Faturası (20)
+  allTime: CARI_KODLAR,   // devir dahil tüm izlenen kodlar
 };
+// Tip bazında gösterilecek tutar (işaret): ciro=borç, tahsilat/alış=alacak, diğer=net
+function detailAmount(type, r) {
+  if (type === 'ciro') return r.BORC;
+  if (type === 'tahsilat' || type === 'alis') return r.ALACAK;
+  return r.ALACAK - r.BORC;
+}
 
 // ═══════════════════════════════════════════════════════════════
 // ENDPOINT: İşlem Detayları (type: nakit | visa | cekSenet | ciro | allTime)
@@ -462,7 +495,7 @@ app.get("/api/details", async (req, res) => {
         const result = await request.query(`
           SELECT
             ch.TARIH AS ISLEMTARIHI,
-            (ch.ALACAK - ch.BORC) AS ALACAK,
+            ch.BORC, ch.ALACAK,
             ch.EVRAKNO AS ACIKLAMA,
             CAST(ch.IZAHAT AS INT) AS BELGEIZAHAT,
             COALESCE(NULLIF(c.UNVAN, ''), c.FIRMAADI) AS firmaUnvan
@@ -470,7 +503,8 @@ app.get("/api/details", async (req, res) => {
           LEFT JOIN [${cariTable}] c ON ch.FIRMANO = c.IND
           WHERE ch.IZAHAT IN (${kodlar.join(',')})${dateFilter('ch.TARIH')}
         `);
-        details = result.recordset;
+        // Tip bazında işaretli tutarı ALACAK alanına yaz (UI bu alanı gösterir)
+        details = result.recordset.map(r => ({ ...r, ALACAK: detailAmount(type, r) }));
       }
     }
 
@@ -716,8 +750,10 @@ app.get("/api/senet", async (req, res) => {
   }
 });
 
-// ─── VİSA: Cari hareketlerden Visa (izahat 13/14) ────────────
-app.get("/api/visa", async (req, res) => {
+// ─── TAHSİLAT/TEDİYE: Cari Giriş (13) + Cari Çıkış (11) ───────
+// Eski /api/visa idi; 13 genel tahsilat ("visa" değil). Gerçek visa
+// TBLVISAHAREKETLERI'nde ama tutar kolonu yok → cari tek temiz kaynak.
+app.get("/api/tahsilat", async (req, res) => {
   if (!requireConnection(req, res)) return;
   const { firmaNo, donemNo, startDate, endDate } = req.query;
   if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
@@ -725,7 +761,7 @@ app.get("/api/visa", async (req, res) => {
   if (!(await validateTableName(T.cariHareket))) return res.json({ success: true, data: [], toplam: {} });
   try {
     const request = pool.request();
-    let where = "WHERE ch.IZAHAT IN (13,14)";
+    let where = `WHERE ch.IZAHAT IN (${IZ.TAHSILAT},${IZ.TEDIYE})`;
     if (startDate && endDate) {
       request.input("sd", sql.Date, startDate); request.input("ed", sql.Date, endDate);
       where += " AND CAST(ch.TARIH AS DATE) BETWEEN @sd AND @ed";
@@ -740,7 +776,7 @@ app.get("/api/visa", async (req, res) => {
     const alacak = result.recordset.reduce((s, r) => s + (r.ALACAK || 0), 0);
     res.json({ success: true, data: result.recordset, toplam: { borc, alacak, net: alacak - borc } });
   } catch (err) {
-    console.error("visa hatası:", err.message);
+    console.error("tahsilat hatası:", err.message);
     res.status(500).json({ success: false, message: err.message });
   }
 });
@@ -763,8 +799,26 @@ app.get("/api/satis-karlilik", async (req, res) => {
     let searchF = "";
     if (search.trim()) { request.input("q", sql.NVarChar, `%${search.trim()}%`); searchF = " AND (sf.MALINCINSI LIKE @q OR sf.STOKKODU LIKE @q)"; }
 
-    // Gelir: satış faturası (GERCEKTOPLAM). Maliyet: SADECE satış çıkışı (IZAHAT=21) hareketleri;
-    // bu satırlarda TUTAR = miktar × birim maliyet (COGS). Üretim sarfı (33), devir (103/104) vb. hariç.
+    // ─── COGS satış-çıkış izahat kodunu OTOMATİK tespit ──────────
+    // Stok hareket satış-çıkış kodu firmaya göre değişir (bu DB=33, başka=21).
+    // Doğru kodu bul: cost-değerli (BIRIMFIYAT≈BIRIMMALIYET), satılan stoklarla
+    // örtüşen, devir/iade hariç stok-çıkışlarından en yüksek tutarlı. Örtüşme
+    // şartı üretim sarfını (hammadde, satışla örtüşmez) eler.
+    let salesOutCode = IZ.SATIS; // güvenli varsayılan
+    if (await validateTableName(T.stokHareket)) {
+      const det = await pool.request().query(`
+        SELECT TOP 1 CAST(sh.IZAHAT AS INT) code
+        FROM [${T.stokHareket}] sh
+        WHERE sh.CIKAN>0 AND ISNULL(sh.IADE,0)=0
+          AND CAST(sh.IZAHAT AS INT) NOT IN (${IZ.DEVIR_GIRIS},${IZ.DEVIR_CIKIS})
+          AND ABS(ISNULL(sh.BIRIMFIYAT,0)-ISNULL(sh.BIRIMMALIYET,0))<0.01
+          AND EXISTS (SELECT 1 FROM [${T.satFat}] sf WHERE sf.STOKNO=sh.STOKNO)
+        GROUP BY sh.IZAHAT ORDER BY SUM(sh.TUTAR) DESC`);
+      if (det.recordset.length) salesOutCode = det.recordset[0].code;
+    }
+
+    // Gelir: satış faturası (GERCEKTOPLAM). Maliyet: tespit edilen satış-çıkış
+    // kodundaki hareketler; bu satırlarda TUTAR = miktar × birim maliyet (COGS).
     const result = await request.query(`
       WITH gelir AS (
         SELECT STOKNO, MAX(MALINCINSI) malincinsi, MAX(STOKKODU) stokkodu,
@@ -773,7 +827,7 @@ app.get("/api/satis-karlilik", async (req, res) => {
       ),
       maliyet AS (
         SELECT STOKNO, SUM(TUTAR) maliyet, SUM(CIKAN) cikan
-        FROM [${T.stokHareket}] WHERE IZAHAT='21' AND CIKAN>0 AND ISNULL(IADE,0)=0 ${mDateF}
+        FROM [${T.stokHareket}] WHERE IZAHAT='${salesOutCode}' AND CIKAN>0 AND ISNULL(IADE,0)=0 ${mDateF}
         GROUP BY STOKNO
       )
       SELECT TOP 500 g.STOKNO, g.malincinsi, g.stokkodu, g.miktar, g.satis,
@@ -787,6 +841,7 @@ app.get("/api/satis-karlilik", async (req, res) => {
       a.satis += r.satis || 0; a.maliyet += r.maliyet || 0; a.kar += r.kar || 0; return a;
     }, { satis: 0, maliyet: 0, kar: 0 });
     ozet.marj = ozet.satis ? (ozet.kar / ozet.satis) * 100 : 0;
+    ozet.maliyetKodu = salesOutCode; // hangi izahat kodundan COGS alındı
 
     res.json({ success: true, data: result.recordset, ozet });
   } catch (err) {
@@ -802,7 +857,7 @@ app.get("/api/home", async (req, res) => {
   if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
   const T = tableNames(firmaNo, donemNo);
   try {
-    const out = { bankaToplam: {}, bankaNakit: {}, bankaKredi: {}, hesapSayisi: 0, cekSayisi: 0, senetSayisi: 0, visaSayisi: 0, visaToplam: 0 };
+    const out = { bankaToplam: {}, bankaNakit: {}, bankaKredi: {}, hesapSayisi: 0, cekSayisi: 0, senetSayisi: 0, tahsilatSayisi: 0, tahsilatToplam: 0 };
 
     if (await validateTableName(T.bankalar) && await validateTableName(T.bankaHareket)) {
       // Hesap bazında bakiye → para birimi bazında net / nakit (artı) / kredi (eksi)
@@ -822,8 +877,8 @@ app.get("/api/home", async (req, res) => {
     if (await validateTableName(T.cekGiris)) out.cekSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.cekGiris}]`)).recordset[0].n;
     if (await validateTableName(T.senetGiris)) out.senetSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.senetGiris}]`)).recordset[0].n;
     if (await validateTableName(T.cariHareket)) {
-      const v = (await pool.request().query(`SELECT COUNT(*) n, ISNULL(SUM(ALACAK),0) t FROM [${T.cariHareket}] WHERE IZAHAT IN (13,14)`)).recordset[0];
-      out.visaSayisi = v.n; out.visaToplam = v.t;
+      const v = (await pool.request().query(`SELECT COUNT(*) n, ISNULL(SUM(ALACAK),0) t FROM [${T.cariHareket}] WHERE IZAHAT=${IZ.TAHSILAT}`)).recordset[0];
+      out.tahsilatSayisi = v.n; out.tahsilatToplam = v.t;
     }
     res.json({ success: true, data: out });
   } catch (err) {
