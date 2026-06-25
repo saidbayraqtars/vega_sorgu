@@ -1,0 +1,62 @@
+{
+  "name": "vega-sorgu-desktop",
+  "version": "1.1.0",
+  "description": "Vega Sorgu — Arctos/Vega ERP finansal raporlama masaüstü uygulaması (Electron, otomatik güncellemeli).",
+  "main": "electron/main.js",
+  "author": "Said Bayraktar",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/saidbayraqtars/vega_sorgu.git"
+  },
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win",
+    "release": "electron-builder --win --publish always"
+  },
+  "build": {
+    "appId": "com.vega.sorgu",
+    "productName": "Vega Sorgu",
+    "asar": false,
+    "directories": {
+      "output": "dist"
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "saidbayraqtars",
+        "repo": "vega_sorgu",
+        "releaseType": "release"
+      }
+    ],
+    "files": [
+      "electron/**",
+      "server/**",
+      "!server/node_modules/**",
+      "!server/config.json",
+      "!server/*.log",
+      "!server/_*.js"
+    ],
+    "win": {
+      "target": "nsis",
+      "icon": "electron/icon.png"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "shortcutName": "Vega Sorgu"
+    }
+  },
+  "devDependencies": {
+    "electron": "^33.2.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "electron-updater": "^6.8.9",
+    "express": "^4.21.0",
+    "mssql": "^11.0.1"
+  }
+}

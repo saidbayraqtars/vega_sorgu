@@ -26,8 +26,10 @@ let currentConfig = null;
 
 // pkg ile derlendiğinde __dirname sanal dosya sistemini gösterir.
 // Dosyayı exe'nin yanına kaydetmek için execPath kullanmalıyız.
+// Electron VEGA_BASE_DIR=userData verir (config.json oraya yazılır). pkg'de exe
+// dizini, dev'de __dirname.
 const isPkg = typeof process.pkg !== 'undefined';
-const baseDir = isPkg ? path.dirname(process.execPath) : __dirname;
+const baseDir = process.env.VEGA_BASE_DIR || (isPkg ? path.dirname(process.execPath) : __dirname);
 const CONFIG_PATH = path.join(baseDir, "config.json");
 
 // ─── Yardımcı: Şifreleme Fonksiyonları ───────────────────────
@@ -981,8 +983,10 @@ app.listen(PORT, () => {
   ╚══════════════════════════════════════════════════╝
   `);
 
-  // Tarayıcıyı otomatik aç
-  const url = `http://localhost:${PORT}`;
-  const startCmd = (process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open');
-  require('child_process').exec(`${startCmd} ${url}`);
+  // Tarayıcıyı otomatik aç — Electron sarmalayıcıda gerekmez (kendi penceresini açar)
+  if (!process.env.VEGA_NO_BROWSER) {
+    const url = `http://localhost:${PORT}`;
+    const startCmd = (process.platform === 'darwin' ? 'open' : process.platform === 'win32' ? 'start' : 'xdg-open');
+    require('child_process').exec(`${startCmd} ${url}`);
+  }
 });
