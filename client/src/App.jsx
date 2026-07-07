@@ -3,8 +3,6 @@ import ConnectionForm from "./components/ConnectionForm";
 import PeriodSelector from "./components/PeriodSelector";
 import AppShell from "./components/AppShell";
 
-import PinLogin from "./components/PinLogin";
-
 function AppContent() {
   const { step } = useConnection();
 
@@ -20,8 +18,6 @@ function AppContent() {
       );
     case "setup":
       return <ConnectionForm />;
-    case "pin-login":
-      return <PinLogin />;
     case "select-period":
       return <PeriodSelector />;
     case "dashboard":

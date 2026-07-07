@@ -9,7 +9,6 @@ export default function ConnectionForm() {
     username: "",
     password: "",
     port: "1433",
-    pin: "",
   });
 
   const handleChange = (e) => {
@@ -18,8 +17,7 @@ export default function ConnectionForm() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    const { pin, ...config } = form;
-    await setup(config, pin);
+    await setup(form);
     // Başarılıysa context otomatik olarak "select-period" adımına geçer
   };
 
@@ -150,28 +148,6 @@ export default function ConnectionForm() {
             />
           </div>
 
-          {/* Setup PIN */}
-          <div className="space-y-1.5 pt-2 border-t border-white/5 mt-4">
-            <label className="block text-xs font-semibold text-violet-400 uppercase tracking-wider">
-              Uygulama PIN Kodu Belirle (6 Haneli)
-            </label>
-            <input
-              type="password"
-              name="pin"
-              value={form.pin}
-              onChange={(e) => {
-                const val = e.target.value.replace(/\D/g, '').slice(0, 6);
-                setForm(prev => ({...prev, pin: val}));
-              }}
-              placeholder="••••••"
-              required
-              pattern="\d{6}"
-              title="Lütfen 6 haneli bir rakam girin"
-              className="w-full px-4 py-3 rounded-xl bg-violet-900/10 border border-violet-500/20 text-white placeholder-dark-500 focus:outline-none focus:ring-2 focus:ring-violet-500/40 focus:border-violet-500/40 transition-all duration-200 text-center tracking-[0.5em] font-mono text-lg"
-            />
-            <p className="text-xs text-dark-500 text-center">Sonraki girişlerde şifre girmemek için bu PIN kullanılacak.</p>
-          </div>
-
           {/* Error */}
           {error && (
             <div className="flex items-start gap-3 p-4 rounded-xl bg-red-500/10 border border-red-500/20 animate-slide-down">
@@ -208,7 +184,7 @@ export default function ConnectionForm() {
 
           {/* Footer Hint */}
           <p className="text-center text-dark-500 text-xs pt-2">
-            Bağlantı sonrası TBLCARIHAREKETLERI tabloları otomatik keşfedilir
+            Bağlantı bilgileri bu cihaza kaydedilir; sonraki açılışlarda şifre sorulmadan otomatik bağlanılır.
           </p>
         </form>
       </div>

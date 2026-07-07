@@ -6,7 +6,7 @@ const API_BASE = "/api";
 
 export function ConnectionProvider({ children }) {
   // ─── Application State ──────────────────────────────────────
-  const [step, setStep] = useState("loading"); // "loading" | "setup" | "pin-login" | "select-period" | "dashboard"
+  const [step, setStep] = useState("loading"); // "loading" | "setup" | "select-period" | "dashboard"
   const [isLoading, setIsLoading] = useState(false);
   const [connectionInfo, setConnectionInfo] = useState(null);
   const [error, setError] = useState(null);
@@ -18,16 +18,25 @@ export function ConnectionProvider({ children }) {
   const [selectedDonem, setSelectedDonem] = useState(null);
   const [currentPage, setCurrentPage] = useState("home"); // sidebar aktif sayfa
 
-  // ─── Check Setup ───────────────────────────────────────────
-  const checkSetup = useCallback(async () => {
+  // ─── Açılış: kurulu mu + otomatik bağlan (PIN YOK) ──────────
+  const bootstrap = useCallback(async () => {
     try {
-      const res = await fetch(`${API_BASE}/check-setup`);
+      const res = await fetch(`${API_BASE}/bootstrap`);
       const data = await res.json();
-      if (data.isSetup) {
-        setStep("pin-login");
-      } else {
-        setStep("setup");
+
+      if (data.connected) {
+        // Kayıtlı bilgilerle otomatik bağlanıldı → doğrudan dönem seçimine
+        setConnectionInfo({ server: data.server || "Kayıtlı Sunucu", database: data.database || "Kayıtlı Veritabanı" });
+        setFirmalar(data.firmalar || []);
+        setDonemler(data.donemler || []);
+        setStep("select-period");
+        return;
       }
+      if (data.needsReconfig) {
+        setError("Kayıtlı bağlantı eski PIN'li formatta. Lütfen bağlantı bilgilerini bir kez daha girin.");
+      }
+      // Kurulu değil ya da bağlanamadı → kurulum ekranı
+      setStep("setup");
     } catch (err) {
       setError("Sunucuya ulaşılamıyor.");
       setStep("setup");
@@ -36,59 +45,23 @@ export function ConnectionProvider({ children }) {
 
   // ─── Initial Check ──────────────────────────────────────────
   useEffect(() => {
-    checkSetup();
-  }, [checkSetup]);
+    bootstrap();
+  }, [bootstrap]);
 
   // ─── Setup (İlk Kurulum) ────────────────────────────────────
-  const setup = useCallback(async (config, pin) => {
+  const setup = useCallback(async (config) => {
     setIsLoading(true);
     setError(null);
     try {
       const res = await fetch(`${API_BASE}/setup`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...config, pin }),
+        body: JSON.stringify(config),
       });
       const data = await res.json();
 
       if (data.success) {
         setConnectionInfo({ server: config.server, database: config.database });
-        setFirmalar(data.firmalar || []);
-        setDonemler(data.donemler || []);
-
-        if (data.firmalar?.length > 0 && data.donemler?.length > 0) {
-          setStep("select-period");
-        } else {
-          setError("Veritabanında firma/dönem bulunamadı.");
-        }
-        return { success: true };
-      } else {
-        setError(data.message);
-        return { success: false, message: data.message };
-      }
-    } catch (err) {
-      setError("Sunucuya bağlanılamadı.");
-      return { success: false };
-    } finally {
-      setIsLoading(false);
-    }
-  }, []);
-
-  // ─── Login (PIN ile) ────────────────────────────────────────
-  const login = useCallback(async (pin) => {
-    setIsLoading(true);
-    setError(null);
-    try {
-      const res = await fetch(`${API_BASE}/login`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ pin }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        // config içindeki sunucu adını falan login dönebilir ama şimdilik "Bağlı" diyelim
-        setConnectionInfo({ server: "Kayıtlı Sunucu", database: "Kayıtlı Veritabanı" });
         setFirmalar(data.firmalar || []);
         setDonemler(data.donemler || []);
 
@@ -153,10 +126,9 @@ export function ConnectionProvider({ children }) {
   }, []);
 
   // ─── Disconnect ─────────────────────────────────────────────
+  // PIN kalktı; bağlantı zaten kayıtlı, sadece firma/dönem seçimine dön.
   const disconnect = useCallback(() => {
-    // Sadece select-period'a veya login'e döndürebiliriz.
-    // Pin girişine döndürmek daha mantıklı
-    setStep("pin-login");
+    setStep("select-period");
     setSelectedFirma(null);
     setSelectedDonem(null);
     setError(null);
@@ -226,9 +198,8 @@ export function ConnectionProvider({ children }) {
 
         // Actions
         setup,
-        login,
         resetSetup,
-        checkSetup,
+        bootstrap,
         selectFirmaVeDonem,
         goBackToPeriodSelection,
         disconnect,

@@ -4,6 +4,7 @@ const sql = require("mssql");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const os = require("os");
 
 const app = express();
 const PORT = 3001;
@@ -32,9 +33,13 @@ const isPkg = typeof process.pkg !== 'undefined';
 const baseDir = process.env.VEGA_BASE_DIR || (isPkg ? path.dirname(process.execPath) : __dirname);
 const CONFIG_PATH = path.join(baseDir, "config.json");
 
-// ─── Yardımcı: Şifreleme Fonksiyonları ───────────────────────
-function encrypt(text, pin) {
-  const key = crypto.createHash("sha256").update(pin).digest();
+// ─── Yardımcı: Şifreleme (PIN YOK) ───────────────────────────
+// Şifre config.json içinde makineye bağlı sabit anahtarla obfuske edilir.
+// Amaç: parolayı düz metin bırakmamak; PIN girişi olmadan otomatik çözülür.
+const APP_SECRET = "vega-sorgu-static-key-v2::" + (os.hostname() || "local");
+
+function encrypt(text) {
+  const key = crypto.createHash("sha256").update(APP_SECRET).digest();
   const iv = crypto.randomBytes(16);
   const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
   let encrypted = cipher.update(text, "utf8", "hex");
@@ -42,8 +47,8 @@ function encrypt(text, pin) {
   return iv.toString("hex") + ":" + encrypted;
 }
 
-function decrypt(text, pin) {
-  const key = crypto.createHash("sha256").update(pin).digest();
+function decrypt(text) {
+  const key = crypto.createHash("sha256").update(APP_SECRET).digest();
   const parts = text.split(":");
   const iv = Buffer.from(parts.shift(), "hex");
   const encryptedText = Buffer.from(parts.join(":"), "hex");
@@ -51,10 +56,6 @@ function decrypt(text, pin) {
   let decrypted = decipher.update(encryptedText, "hex", "utf8");
   decrypted += decipher.final("utf8");
   return decrypted;
-}
-
-function hashPin(pin) {
-  return crypto.createHash("sha256").update(pin).digest("hex");
 }
 
 // ─── Yardımcı: Pool oluştur ──────────────────────────────────
@@ -104,8 +105,77 @@ function requireConnection(req, res) {
   return true;
 }
 
+// ─── Yardımcı: Firma + Dönem listesini çek ───────────────────
+async function loadFirmaDonem() {
+  const request = pool.request();
+  const firmalarResult = await request.query(`
+    SELECT IND,
+           '0' + CAST(IND AS VARCHAR) AS FIRMANO,
+           KISAAD AS FIRMAADI
+    FROM TBLFIRMA
+    ORDER BY IND
+  `);
+  const firmalar = firmalarResult.recordset.map(f => ({ FIRMANO: f.FIRMANO, FIRMAADI: f.FIRMAADI, IND: f.IND }));
+
+  const donemlerResult = await pool.request().query(`
+    SELECT FIND,
+           RIGHT('0000' + CAST(IND AS VARCHAR), 4) AS DONEMNO,
+           DONEM
+    FROM TBLDONEM
+    ORDER BY FIND, IND
+  `);
+  return { firmalar, donemler: donemlerResult.recordset };
+}
+
+// ─── Yardımcı: Kayıtlı config ile otomatik bağlan (PIN yok) ───
+// Dönüş: { isSetup, connected, needsReconfig?, firmalar?, donemler? }
+async function connectFromConfig() {
+  if (!fs.existsSync(CONFIG_PATH)) return { isSetup: false, connected: false };
+  let saved;
+  try {
+    saved = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf8"));
+  } catch {
+    return { isSetup: false, connected: false };
+  }
+  // Eski PIN'li format (pinHash var) → statik anahtarla çözülemez, yeniden kurulum gerekir.
+  if (saved.pinHash) return { isSetup: true, connected: false, needsReconfig: true };
+  try {
+    const password = decrypt(saved.password);
+    const dbConfig = {
+      server: saved.server, database: saved.database,
+      username: saved.username, port: saved.port, password,
+    };
+    if (pool) { await pool.close(); pool = null; }
+    pool = await createPool(dbConfig);
+    currentConfig = dbConfig;
+    const { firmalar, donemler } = await loadFirmaDonem();
+    return { isSetup: true, connected: true, firmalar, donemler,
+             server: saved.server, database: saved.database };
+  } catch (err) {
+    console.error("Oto-bağlantı hatası:", err.message);
+    return { isSetup: true, connected: false, message: err.message };
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
-// ENDPOINT: Kurulum Kontrolü (Check Setup)
+// ENDPOINT: Açılış — kurulu mu + otomatik bağlan (PIN YOK)
+// ═══════════════════════════════════════════════════════════════
+app.get("/api/bootstrap", async (req, res) => {
+  try {
+    if (pool && pool.connected) {
+      const { firmalar, donemler } = await loadFirmaDonem();
+      return res.json({ success: true, isSetup: true, connected: true, firmalar, donemler,
+                        server: currentConfig?.server, database: currentConfig?.database });
+    }
+    const r = await connectFromConfig();
+    return res.json({ success: true, ...r });
+  } catch (err) {
+    return res.status(500).json({ success: false, isSetup: fs.existsSync(CONFIG_PATH), connected: false, message: err.message });
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// ENDPOINT: Kurulum Kontrolü (Check Setup) — geri uyumluluk
 // ═══════════════════════════════════════════════════════════════
 app.get("/api/check-setup", (req, res) => {
   if (fs.existsSync(CONFIG_PATH)) {
@@ -118,14 +188,10 @@ app.get("/api/check-setup", (req, res) => {
 // ENDPOINT: PIN ve Veritabanı Kurulumu (Setup)
 // ═══════════════════════════════════════════════════════════════
 app.post("/api/setup", async (req, res) => {
-  const { server, database, username, password, port, pin } = req.body;
+  const { server, database, username, password, port } = req.body;
 
-  if (!server || !database || !username || !password || !pin) {
-    return res.status(400).json({ success: false, message: "Tüm alanları ve PIN kodunu doldurunuz." });
-  }
-
-  if (pin.length !== 6 || !/^\d+$/.test(pin)) {
-    return res.status(400).json({ success: false, message: "PIN kodu 6 haneli sadece rakamlardan oluşmalıdır." });
+  if (!server || !database || !username || !password) {
+    return res.status(400).json({ success: false, message: "Sunucu, veritabanı, kullanıcı adı ve şifre alanlarını doldurunuz." });
   }
 
   try {
@@ -138,119 +204,27 @@ app.post("/api/setup", async (req, res) => {
     pool = await createPool(config);
     currentConfig = config;
 
-    const request = pool.request();
-    const firmalarResult = await request.query(`
-      SELECT IND,
-             '0' + CAST(IND AS VARCHAR) AS FIRMANO,
-             KISAAD AS FIRMAADI
-      FROM TBLFIRMA
-      ORDER BY IND
-    `);
+    const { firmalar, donemler } = await loadFirmaDonem();
 
-    const firmalar = firmalarResult.recordset.map(f => ({ FIRMANO: f.FIRMANO, FIRMAADI: f.FIRMAADI, IND: f.IND }));
-
-    const donemlerResult = await request.query(`
-      SELECT FIND,
-             RIGHT('0000' + CAST(IND AS VARCHAR), 4) AS DONEMNO,
-             DONEM
-      FROM TBLDONEM
-      ORDER BY FIND, IND
-    `);
-
-    const donemler = donemlerResult.recordset;
-
-    // Ayarları şifreleyip kaydet
+    // Ayarları makine anahtarıyla obfuske edip kaydet (PIN yok)
     const savedConfig = {
       server,
       database,
       username,
       port,
-      password: encrypt(password, pin),
-      pinHash: hashPin(pin)
+      password: encrypt(password),
     };
 
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(savedConfig, null, 2));
 
     res.json({
       success: true,
-      message: "Kurulum başarılı. Bilgiler güvenli bir şekilde kaydedildi.",
+      message: "Kurulum başarılı. Bağlantı bilgileri kaydedildi.",
       firmalar, donemler
     });
   } catch (err) {
     console.error("Setup Hatası:", err);
     res.status(500).json({ success: false, message: "Bağlantı hatası: " + err.message });
-  }
-});
-
-// ═══════════════════════════════════════════════════════════════
-// ENDPOINT: PIN ile Giriş (Login)
-// ═══════════════════════════════════════════════════════════════
-app.post("/api/login", async (req, res) => {
-  const { pin } = req.body;
-
-  if (!pin) {
-    return res.status(400).json({ success: false, message: "Lütfen PIN kodunuzu giriniz." });
-  }
-
-  if (!fs.existsSync(CONFIG_PATH)) {
-    return res.status(400).json({ success: false, message: "Sistem kurulu değil, lütfen kurulum yapın." });
-  }
-
-  try {
-    const fileData = fs.readFileSync(CONFIG_PATH, "utf8");
-    const savedConfig = JSON.parse(fileData);
-
-    if (hashPin(pin) !== savedConfig.pinHash) {
-      return res.status(401).json({ success: false, message: "Hatalı PIN kodu!" });
-    }
-
-    // Şifreyi çöz
-    const password = decrypt(savedConfig.password, pin);
-    const dbConfig = {
-      server: savedConfig.server,
-      database: savedConfig.database,
-      username: savedConfig.username,
-      port: savedConfig.port,
-      password
-    };
-
-    if (pool) {
-      await pool.close();
-      pool = null;
-    }
-
-    pool = await createPool(dbConfig);
-    currentConfig = dbConfig;
-
-    const request = pool.request();
-    const firmalarResult = await request.query(`
-      SELECT IND,
-             '0' + CAST(IND AS VARCHAR) AS FIRMANO,
-             KISAAD AS FIRMAADI
-      FROM TBLFIRMA
-      ORDER BY IND
-    `);
-
-    const firmalar = firmalarResult.recordset.map(f => ({ FIRMANO: f.FIRMANO, FIRMAADI: f.FIRMAADI, IND: f.IND }));
-
-    const donemlerResult = await request.query(`
-      SELECT FIND,
-             RIGHT('0000' + CAST(IND AS VARCHAR), 4) AS DONEMNO,
-             DONEM
-      FROM TBLDONEM
-      ORDER BY FIND, IND
-    `);
-
-    const donemler = donemlerResult.recordset;
-
-    res.json({
-      success: true,
-      message: "Giriş başarılı.",
-      firmalar, donemler
-    });
-  } catch (err) {
-    console.error("Login Hatası:", err);
-    res.status(500).json({ success: false, message: "Bağlantı veya şifre çözme hatası: " + err.message });
   }
 });
 
@@ -384,7 +358,7 @@ app.get("/api/summary", async (req, res) => {
       req2.input("startDate", sql.Date, startDate);
       req2.input("endDate", sql.Date, endDate);
       const kasaRes = await req2.query(`
-        SELECT ISNULL(SUM(GELIR), 0) AS gelir, ISNULL(SUM(GIDER), 0) AS gider
+        SELECT ISNULL(SUM(GELIR*${KURX}), 0) AS gelir, ISNULL(SUM(GIDER*${KURX}), 0) AS gider
         FROM [${kasaTable}]
         WHERE 1 = 1${dateFilter('TARIH')}
       `);
@@ -530,6 +504,7 @@ function tableNames(firmaNo, donemNo) {
     cariHareket: `F${firmaNo}D${donemNo}TBLCARIHAREKETLERI`,
     bankalar: `F${firmaNo}TBLBANKALAR`,
     bankaHareket: `F${firmaNo}D${donemNo}TBLBANKAHAREKETLERI`,
+    kasa: `F${firmaNo}D${donemNo}TBLKASA`,
     cekGiris: `F${firmaNo}D${donemNo}TBLCEKGIRIS`,
     cekCikis: `F${firmaNo}D${donemNo}TBLCEKCIKIS`,
     senetGiris: `F${firmaNo}D${donemNo}TBLSENETGIRIS`,
@@ -540,6 +515,24 @@ function tableNames(firmaNo, donemNo) {
     satFat: `F${firmaNo}D${donemNo}TBLSATFATHAREKET`,
   };
 }
+
+// ─── Döviz hesabı tespiti ────────────────────────────────────
+// Bu DB'de tüm banka/kasa PARABIRIMI='TL' ve KUR≈1 kaydedilmiş; döviz kasaları
+// yalnızca hesap ADINDA belli (İÇ KASA EURO/DOLAR/STERLİN/FRANK, HALKBANK-STERLİN).
+// Bunları TL nakit toplamından ayırıp kendi para birimiyle listelemek için.
+function detectDoviz(name, parabirimi) {
+  const pb = (parabirimi || "").trim().toUpperCase();
+  if (pb && pb !== "TL" && pb !== "TRY") return pb;             // gerçek döviz alanı varsa öncelik
+  const s = (name || "").toLocaleUpperCase("tr-TR");
+  if (/\bEUR(O)?\b/.test(s)) return "EUR";
+  if (/DOLAR|DOLLAR|\bUSD\b/.test(s)) return "USD";
+  if (/STERL[İI]N|\bGBP\b|POUND/.test(s)) return "GBP";
+  if (/FRANK|\bCHF\b/.test(s)) return "CHF";
+  return null; // TL
+}
+
+// KUR ile TL'ye normalize eden SQL parçası (KUR 0/NULL → 1 kabul)
+const KURX = "ISNULL(NULLIF(KUR,0),1)";
 
 // ─── CARİ: Liste (arama + sayfalama) ─────────────────────────
 app.get("/api/cari/list", async (req, res) => {
@@ -637,17 +630,23 @@ app.get("/api/banka/list", async (req, res) => {
       FROM [${T.bankalar}] b ${bakiyeJoin}
       WHERE ISNULL(b.STATUS,1)=1
       ORDER BY b.ADI`);
-    // Para birimi bazında: net, nakit (artı bakiyeli hesaplar), kredi (eksi bakiyeli hesaplar)
-    const toplam = {}, nakit = {}, kredi = {};
+    // TL hesaplar: net / nakit (artı) / kredi (eksi). Döviz kasaları (İÇ KASA EURO
+    // vb.) ayrı bir 'doviz' kovasında toplanır ve TL toplamına dahil edilmez.
+    const toplam = {}, nakit = {}, kredi = {}, doviz = {};
     let aktif = 0;
     for (const r of result.recordset) {
-      const pb = r.PARABIRIMI || "TL";
-      toplam[pb] = (toplam[pb] || 0) + r.BAKIYE;
-      if (r.BAKIYE > 0) nakit[pb] = (nakit[pb] || 0) + r.BAKIYE;
-      else if (r.BAKIYE < 0) kredi[pb] = (kredi[pb] || 0) + r.BAKIYE;
+      const dov = detectDoviz(r.ADI, r.PARABIRIMI);
+      r.DOVIZ = dov;                       // UI etiketi
       if (r.HAREKET > 0 || r.BAKIYE !== 0) aktif++;
+      if (dov) {                           // döviz kasası: ayrı, TL'ye karıştırma
+        doviz[dov] = (doviz[dov] || 0) + r.BAKIYE;
+        continue;
+      }
+      toplam.TL = (toplam.TL || 0) + r.BAKIYE;
+      if (r.BAKIYE > 0) nakit.TL = (nakit.TL || 0) + r.BAKIYE;
+      else if (r.BAKIYE < 0) kredi.TL = (kredi.TL || 0) + r.BAKIYE;
     }
-    res.json({ success: true, data: result.recordset, toplam, nakit, kredi, hesapSayisi: aktif });
+    res.json({ success: true, data: result.recordset, toplam, nakit, kredi, doviz, hesapSayisi: aktif });
   } catch (err) {
     console.error("banka/list hatası:", err.message);
     res.status(500).json({ success: false, message: err.message });
@@ -859,21 +858,37 @@ app.get("/api/home", async (req, res) => {
   if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
   const T = tableNames(firmaNo, donemNo);
   try {
-    const out = { bankaToplam: {}, bankaNakit: {}, bankaKredi: {}, hesapSayisi: 0, cekSayisi: 0, senetSayisi: 0, tahsilatSayisi: 0, tahsilatToplam: 0 };
+    const out = {
+      kasaNet: 0, kasaKirilim: [],                              // GERÇEK NAKİT (kasa)
+      bankaToplam: {}, bankaNakit: {}, bankaKredi: {}, bankaDoviz: {}, hesapSayisi: 0,
+      cekSayisi: 0, senetSayisi: 0, tahsilatSayisi: 0, tahsilatToplam: 0,
+    };
+
+    // ─── GERÇEK NAKİT: Kasa (TBLKASA) net = SUM((GELIR-GIDER)×KUR), devir dahil ──
+    // Toplam Nakit artık BANKADAN değil kasadan gelir (kullanıcı düzeltmesi).
+    if (await validateTableName(T.kasa)) {
+      const k = await pool.request().query(`
+        SELECT ISNULL(NULLIF(LTRIM(RTRIM(KASAADI)),''),'(Tanımsız)') kasa,
+               ISNULL(SUM((GELIR-GIDER)*${KURX}),0) net
+        FROM [${T.kasa}] GROUP BY KASAADI ORDER BY SUM((GELIR-GIDER)*${KURX}) DESC`);
+      out.kasaKirilim = k.recordset;
+      out.kasaNet = k.recordset.reduce((s, r) => s + (r.net || 0), 0);
+    }
 
     if (await validateTableName(T.bankalar) && await validateTableName(T.bankaHareket)) {
-      // Hesap bazında bakiye → para birimi bazında net / nakit (artı) / kredi (eksi)
+      // Hesap bazında net hareket → TL nakit/kredi + döviz kasaları ayrı
       const b = await pool.request().query(`
-        SELECT b.PARABIRIMI, ISNULL(h.bakiye,0) bakiye, ISNULL(h.hareket,0) hareket
+        SELECT b.ADI, b.PARABIRIMI, ISNULL(h.bakiye,0) bakiye, ISNULL(h.hareket,0) hareket
         FROM [${T.bankalar}] b
         LEFT JOIN (SELECT BANKANO, SUM(BORC-ALACAK) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND
         WHERE ISNULL(b.STATUS,1)=1`);
       b.recordset.forEach(r => {
-        const pb = r.PARABIRIMI || "TL";
-        out.bankaToplam[pb] = (out.bankaToplam[pb] || 0) + r.bakiye;
-        if (r.bakiye > 0) out.bankaNakit[pb] = (out.bankaNakit[pb] || 0) + r.bakiye;
-        else if (r.bakiye < 0) out.bankaKredi[pb] = (out.bankaKredi[pb] || 0) + r.bakiye;
         if (r.hareket > 0 || r.bakiye !== 0) out.hesapSayisi++;
+        const dov = detectDoviz(r.ADI, r.PARABIRIMI);
+        if (dov) { out.bankaDoviz[dov] = (out.bankaDoviz[dov] || 0) + r.bakiye; return; }
+        out.bankaToplam.TL = (out.bankaToplam.TL || 0) + r.bakiye;
+        if (r.bakiye > 0) out.bankaNakit.TL = (out.bankaNakit.TL || 0) + r.bakiye;
+        else if (r.bakiye < 0) out.bankaKredi.TL = (out.bankaKredi.TL || 0) + r.bakiye;
       });
     }
     if (await validateTableName(T.cekGiris)) out.cekSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.cekGiris}]`)).recordset[0].n;
@@ -982,6 +997,11 @@ app.listen(PORT, () => {
   ║   GET  /api/details?date=...&table=...          ║
   ╚══════════════════════════════════════════════════╝
   `);
+
+  // Kayıtlı config varsa PIN'siz otomatik bağlan (açılışta hazır olsun)
+  connectFromConfig()
+    .then(r => { if (r.connected) console.log("[Boot] Otomatik bağlandı:", r.database); })
+    .catch(() => {});
 
   // Tarayıcıyı otomatik aç — Electron sarmalayıcıda gerekmez (kendi penceresini açar)
   if (!process.env.VEGA_NO_BROWSER) {

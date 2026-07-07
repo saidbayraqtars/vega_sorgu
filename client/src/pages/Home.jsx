@@ -62,10 +62,9 @@ export default function Home() {
       {error && <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">{error}</div>}
 
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-        <StatCard title="Toplam Nakit" grad="from-cyan-600/20 to-blue-800/20" clr="text-cyan-400"
-          onClick={() => setCurrentPage("banka")}
-          value={loading ? "…" : formatTL(data?.bankaNakit?.TL || 0)}
-          sub={loading ? "" : `${data?.hesapSayisi || 0} aktif hesap${data?.bankaKredi?.TL ? ` · Kredi ${formatTL(data.bankaKredi.TL)}` : ""}`} />
+        <StatCard title="Toplam Nakit (Kasa)" grad="from-cyan-600/20 to-blue-800/20" clr="text-cyan-400"
+          value={loading ? "…" : formatTL(data?.kasaNet || 0)}
+          sub={loading ? "" : `${data?.kasaKirilim?.length || 0} kasa · devir dahil`} />
         <StatCard title="Çek Kayıtları" grad="from-rose-600/20 to-red-800/20" clr="text-rose-400"
           onClick={() => setCurrentPage("cek")}
           value={loading ? "…" : formatNumber(data?.cekSayisi || 0, 0)} sub="Alınan çekler (portföy)" />
@@ -77,6 +76,45 @@ export default function Home() {
           value={loading ? "…" : formatNumber(data?.tahsilatSayisi || 0, 0)}
           sub={loading ? "" : `Toplam ${formatTL(data?.tahsilatToplam || 0)}`} />
       </div>
+
+      {/* Kasa kırılımı + Döviz kasaları */}
+      {!loading && (() => {
+      const dovizEntries = Object.entries(data?.bankaDoviz || {}).filter(([, v]) => Number(v) !== 0);
+      return (data?.kasaKirilim?.length > 0 || dovizEntries.length > 0) && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 glass-card p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="text-sm font-bold text-white">Kasa Bakiyeleri</h3>
+              <span className="text-xs text-dark-400">Net (devir dahil)</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {data.kasaKirilim.map((k, i) => (
+                <div key={i} className="rounded-xl border border-white/5 bg-dark-900/40 px-3 py-2.5">
+                  <p className="text-dark-400 text-[11px] font-medium truncate">{k.kasa}</p>
+                  <p className={`text-sm font-bold mt-0.5 ${k.net < 0 ? "text-red-400" : "text-cyan-300"}`}>{formatTL(k.net)}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="glass-card p-5">
+            <h3 className="text-sm font-bold text-white mb-3">Döviz Kasaları</h3>
+            {dovizEntries.length === 0 ? (
+              <p className="text-dark-500 text-xs">Döviz kasası yok.</p>
+            ) : (
+              <div className="space-y-2">
+                {dovizEntries.map(([pb, v]) => (
+                  <div key={pb} className="flex items-center justify-between rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2">
+                    <span className="text-amber-300 text-xs font-semibold">{pb}</span>
+                    <span className="text-white text-sm font-bold">{formatNumber(v)} {pb}</span>
+                  </div>
+                ))}
+                <p className="text-dark-500 text-[10px] pt-1">DB'de TL alanında saklı; kur uygulanmadan gösterilir.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      );
+      })()}
 
       <div>
         <div className="flex items-center justify-between mb-4">
