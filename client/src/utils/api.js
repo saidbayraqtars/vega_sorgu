@@ -16,6 +16,15 @@ export function formatTL(n) {
   return `${tl.format(Number(n) || 0)} ₺`;
 }
 
+// Para birimine göre sembollü format — döviz hesapları (EUR/USD/GBP/CHF)
+// DB'de TL alanında ham tutar olarak saklanır, para birimi hesap adından tespit edilir.
+const CURRENCY_SYMBOL = { TL: "₺", TRY: "₺", EUR: "€", USD: "$", GBP: "£", CHF: "CHF" };
+export function formatMoney(n, pb) {
+  const key = (pb || "TL").toUpperCase();
+  const sym = CURRENCY_SYMBOL[key] || key;
+  return `${tl.format(Number(n) || 0)} ${sym}`;
+}
+
 export function formatNumber(n, frac = 2) {
   return new Intl.NumberFormat("tr-TR", { minimumFractionDigits: frac, maximumFractionDigits: frac }).format(Number(n) || 0);
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useConnection } from "../context/ConnectionContext";
-import { apiGet, formatTL, formatNumber, formatDate } from "../utils/api";
+import { apiGet, formatTL, formatMoney, formatNumber, formatDate } from "../utils/api";
 import { getIzahatDetails } from "../constants/izahat";
 
 const MODULES = [
@@ -67,10 +67,12 @@ export default function Home() {
           sub={loading ? "" : `${data?.kasaKirilim?.length || 0} kasa · devir dahil`} />
         <StatCard title="Çek Kayıtları" grad="from-rose-600/20 to-red-800/20" clr="text-rose-400"
           onClick={() => setCurrentPage("cek")}
-          value={loading ? "…" : formatNumber(data?.cekSayisi || 0, 0)} sub="Alınan çekler (portföy)" />
+          value={loading ? "…" : formatNumber((data?.cekSayisi || 0) + (data?.cekCikisSayisi || 0), 0)}
+          sub={loading ? "" : `${formatNumber(data?.cekSayisi || 0, 0)} alınan · ${formatNumber(data?.cekCikisSayisi || 0, 0)} verilen`} />
         <StatCard title="Senet Kayıtları" grad="from-amber-600/20 to-orange-800/20" clr="text-amber-400"
           onClick={() => setCurrentPage("senet")}
-          value={loading ? "…" : formatNumber(data?.senetSayisi || 0, 0)} sub="Alınan senetler" />
+          value={loading ? "…" : formatNumber((data?.senetSayisi || 0) + (data?.senetCikisSayisi || 0), 0)}
+          sub={loading ? "" : `${formatNumber(data?.senetSayisi || 0, 0)} alınan · ${formatNumber(data?.senetCikisSayisi || 0, 0)} verilen`} />
         <StatCard title="Tahsilatlar" grad="from-violet-600/20 to-purple-800/20" clr="text-violet-400"
           onClick={() => setCurrentPage("tahsilat")}
           value={loading ? "…" : formatNumber(data?.tahsilatSayisi || 0, 0)}
@@ -105,7 +107,7 @@ export default function Home() {
                 {dovizEntries.map(([pb, v]) => (
                   <div key={pb} className="flex items-center justify-between rounded-xl border border-amber-500/15 bg-amber-500/5 px-3 py-2">
                     <span className="text-amber-300 text-xs font-semibold">{pb}</span>
-                    <span className="text-white text-sm font-bold">{formatNumber(v)} {pb}</span>
+                    <span className="text-white text-sm font-bold">{formatMoney(v, pb)}</span>
                   </div>
                 ))}
                 <p className="text-dark-500 text-[10px] pt-1">DB'de TL alanında saklı; kur uygulanmadan gösterilir.</p>

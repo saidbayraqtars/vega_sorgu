@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useConnection } from "../context/ConnectionContext";
 import { apiGet, formatTL, formatDate } from "../utils/api";
+import { getIzahatDetails } from "../constants/izahat";
 
 function DetayModal({ firmaNo, donemNo, ind, onClose }) {
   const [d, setD] = useState(null);
@@ -70,7 +71,7 @@ function DetayModal({ firmaNo, donemNo, ind, onClose }) {
                   {d.hareketler.map((h, i) => (
                     <tr key={i} className="border-t border-white/5 hover:bg-white/5">
                       <td className="px-3 py-2 text-dark-300 font-mono text-xs">{formatDate(h.TARIH)}</td>
-                      <td className="px-3 py-2 text-dark-300">{h.IZAHAT}</td>
+                      <td className="px-3 py-2 text-dark-300">{getIzahatDetails(parseInt(h.IZAHAT)).label}</td>
                       <td className="px-3 py-2 text-dark-400 font-mono text-xs">{h.EVRAKNO}</td>
                       <td className="px-3 py-2 text-right text-red-400">{h.BORC ? formatTL(h.BORC) : "—"}</td>
                       <td className="px-3 py-2 text-right text-emerald-400">{h.ALACAK ? formatTL(h.ALACAK) : "—"}</td>
@@ -87,26 +88,40 @@ function DetayModal({ firmaNo, donemNo, ind, onClose }) {
   );
 }
 
+const BAKIYE_FILTRELER = [
+  ["", "Tümü"],
+  ["borclu", "Borçlu (bize borçlu)"],
+  ["alacakli", "Alacaklı (biz borçluyuz)"],
+  ["bakiyesiz", "Bakiyesiz"],
+];
+const SIRALAMALAR = [
+  ["ad", "Ada göre (A→Z)"],
+  ["bakiyeDesc", "Bakiye (yüksek → düşük)"],
+  ["bakiyeAsc", "Bakiye (düşük → yüksek)"],
+];
+
 export default function CariKartlar() {
   const { selectedFirma, selectedDonem } = useConnection();
   const [search, setSearch] = useState("");
+  const [bakiye, setBakiye] = useState("");
+  const [sort, setSort] = useState("ad");
   const [page, setPage] = useState(1);
   const [res, setRes] = useState({ data: [], total: 0, pageCount: 0 });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [detayInd, setDetayInd] = useState(null);
 
-  useEffect(() => { setPage(1); }, [search, selectedFirma]);
+  useEffect(() => { setPage(1); }, [search, selectedFirma, bakiye, sort]);
 
   useEffect(() => {
     let on = true;
     setLoading(true); setError(null);
-    apiGet("/cari/list", { firmaNo: selectedFirma, search, page })
+    apiGet("/cari/list", { firmaNo: selectedFirma, search, page, bakiye, sort })
       .then(r => { if (on) setRes(r); })
       .catch(e => { if (on) setError(e.message); })
       .finally(() => { if (on) setLoading(false); });
     return () => { on = false; };
-  }, [selectedFirma, search, page]);
+  }, [selectedFirma, search, page, bakiye, sort]);
 
   return (
     <div className="p-8 space-y-6">
@@ -119,6 +134,19 @@ export default function CariKartlar() {
         <label className="block text-xs font-semibold text-dark-400 uppercase tracking-wider mb-2">Cari Ara (Firma Adı, Kodu veya No)</label>
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Örn: Firma adı, kodu veya no..."
           className="w-full px-4 py-3 rounded-xl bg-dark-900/60 border border-white/10 text-white placeholder-dark-500 focus:outline-none focus:border-violet-500/50 transition-all" />
+
+        <div className="mt-3 flex flex-wrap items-center gap-3">
+          <div className="flex rounded-lg overflow-hidden border border-white/10">
+            {BAKIYE_FILTRELER.map(([v, l]) => (
+              <button key={v} onClick={() => setBakiye(v)}
+                className={`px-3 py-2 text-xs font-medium transition-colors ${bakiye === v ? "bg-violet-600 text-white" : "bg-dark-800 text-dark-300 hover:bg-dark-700"}`}>{l}</button>
+            ))}
+          </div>
+          <select value={sort} onChange={e => setSort(e.target.value)}
+            className="px-3 py-2 rounded-lg bg-dark-800 border border-white/10 text-dark-200 text-xs focus:outline-none focus:border-violet-500/50">
+            {SIRALAMALAR.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+          </select>
+        </div>
 
         {error && <p className="text-red-400 text-sm mt-3">{error}</p>}
 

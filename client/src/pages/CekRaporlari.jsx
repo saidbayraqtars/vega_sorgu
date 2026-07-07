@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import { useConnection } from "../context/ConnectionContext";
-import { apiGet, formatDate } from "../utils/api";
+import { apiGet, formatDate, formatTL } from "../utils/api";
 
 function CekDetayModal({ cek, yon, onClose }) {
   const rows = [
     ["Belge No", cek.BELGENO],
+    ["Tutar", cek.TUTAR != null ? formatTL(cek.TUTAR) : null],
+    ["Vade", formatDate(cek.VADE)],
     ["Keşideci", cek.KESIDEEDEN],
     ["Cari", cek.cariUnvan],
     ["Banka", cek.bankaAdi],
@@ -79,6 +81,7 @@ export default function CekRaporlari() {
         <input value={search} onChange={e => setSearch(e.target.value)} placeholder="Belge no, keşideci veya cari ara..."
           className="flex-1 min-w-[200px] px-4 py-2 rounded-lg bg-dark-900/60 border border-white/10 text-white text-sm placeholder-dark-500 focus:outline-none focus:border-violet-500/50" />
         <span className="text-sm text-dark-400">{loading ? "Yükleniyor..." : `${filtered.length} kayıt`}</span>
+        <span className="text-sm text-dark-300">Toplam: <span className="font-bold text-amber-400">{formatTL(filtered.reduce((s, c) => s + (Number(c.TUTAR) || 0), 0))}</span></span>
       </div>
 
       {error && <div className="p-4 rounded-xl bg-red-500/10 border border-red-500/20 text-red-300 text-sm">{error}</div>}
@@ -89,7 +92,7 @@ export default function CekRaporlari() {
             <thead><tr className="bg-dark-800/60 text-dark-400 text-xs uppercase">
               <th className="px-4 py-3 text-left">Belge No</th><th className="px-4 py-3 text-left">Keşideci</th>
               <th className="px-4 py-3 text-left">Cari</th><th className="px-4 py-3 text-left">Banka / Şube</th>
-              <th className="px-4 py-3 text-left">Keşide Tarihi</th><th className="px-4 py-3 text-left">Banka Hesap No</th>
+              <th className="px-4 py-3 text-left">Vade</th><th className="px-4 py-3 text-right">Tutar</th>
               <th className="px-4 py-3"></th>
             </tr></thead>
             <tbody>
@@ -99,8 +102,8 @@ export default function CekRaporlari() {
                   <td className="px-4 py-3 text-dark-200">{c.KESIDEEDEN || "—"}</td>
                   <td className="px-4 py-3 text-dark-300">{c.cariUnvan || "—"}</td>
                   <td className="px-4 py-3 text-dark-400">{c.bankaAdi || "—"}{c.SUBE ? <span className="text-dark-500"> / {c.SUBE}</span> : ""}</td>
-                  <td className="px-4 py-3 text-dark-300 font-mono text-xs">{formatDate(c.KESIDETARIHI)}</td>
-                  <td className="px-4 py-3 text-dark-400 font-mono text-xs">{c.BANKAHESAPNO || "—"}</td>
+                  <td className="px-4 py-3 text-dark-300 font-mono text-xs">{formatDate(c.VADE || c.KESIDETARIHI)}</td>
+                  <td className="px-4 py-3 text-right text-amber-400 font-semibold">{c.TUTAR != null ? formatTL(c.TUTAR) : "—"}</td>
                   <td className="px-4 py-3 text-right"><span className="text-violet-400 text-xs">Detay →</span></td>
                 </tr>
               ))}

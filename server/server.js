@@ -522,7 +522,10 @@ function tableNames(firmaNo, donemNo) {
 // Bunları TL nakit toplamından ayırıp kendi para birimiyle listelemek için.
 function detectDoviz(name, parabirimi) {
   const pb = (parabirimi || "").trim().toUpperCase();
-  if (pb && pb !== "TL" && pb !== "TRY") return pb;             // gerçek döviz alanı varsa öncelik
+  // PARABIRIMI bazen sembol olarak kayıtlı (ör. HALKBANK/EURO → '€') → koda çevir
+  const SYM = { "€": "EUR", "$": "USD", "£": "GBP", "₺": "TL" };
+  const norm = SYM[pb] || pb;
+  if (norm && norm !== "TL" && norm !== "TRY") return norm;     // gerçek döviz alanı varsa öncelik
   const s = (name || "").toLocaleUpperCase("tr-TR");
   if (/\bEUR(O)?\b/.test(s)) return "EUR";
   if (/DOLAR|DOLLAR|\bUSD\b/.test(s)) return "USD";
@@ -534,10 +537,12 @@ function detectDoviz(name, parabirimi) {
 // KUR ile TL'ye normalize eden SQL parçası (KUR 0/NULL → 1 kabul)
 const KURX = "ISNULL(NULLIF(KUR,0),1)";
 
-// ─── CARİ: Liste (arama + sayfalama) ─────────────────────────
+// ─── CARİ: Liste (arama + bakiye filtresi + sıralama + sayfalama) ──
+// bakiye: borclu (BAKIYE>0, cari bize borçlu) | alacakli (BAKIYE<0, biz borçluyuz) | bakiyesiz
+// sort: ad | bakiyeDesc | bakiyeAsc
 app.get("/api/cari/list", async (req, res) => {
   if (!requireConnection(req, res)) return;
-  const { firmaNo, search = "", page = "1" } = req.query;
+  const { firmaNo, search = "", page = "1", bakiye = "", sort = "" } = req.query;
   if (!firmaNo) return res.status(400).json({ success: false, message: "firmaNo gerekli." });
 
   const T = tableNames(firmaNo, "0000");
@@ -554,6 +559,12 @@ app.get("/api/cari/list", async (req, res) => {
       request.input("s", sql.NVarChar, `%${search.trim()}%`);
       where += ` AND (FIRMAADI LIKE @s OR UNVAN LIKE @s OR FIRMAKODU LIKE @s OR CAST(IND AS VARCHAR) LIKE @s)`;
     }
+    if (bakiye === "borclu") where += ` AND ISNULL(BAKIYE,0) > 0.009`;
+    else if (bakiye === "alacakli") where += ` AND ISNULL(BAKIYE,0) < -0.009`;
+    else if (bakiye === "bakiyesiz") where += ` AND ABS(ISNULL(BAKIYE,0)) <= 0.009`;
+    const ORDERS = { ad: "FIRMAADI", bakiyeDesc: "ISNULL(BAKIYE,0) DESC, FIRMAADI", bakiyeAsc: "ISNULL(BAKIYE,0) ASC, FIRMAADI" };
+    const orderBy = ORDERS[sort] || ORDERS.ad;
+
     const countRes = await request.query(`SELECT COUNT(*) AS cnt FROM [${T.cari}] ${where}`);
     const total = countRes.recordset[0].cnt;
 
@@ -563,7 +574,7 @@ app.get("/api/cari/list", async (req, res) => {
       SELECT IND, FIRMAKODU, COALESCE(NULLIF(UNVAN,''), FIRMAADI) AS UNVAN, FIRMAADI,
              ISNULL(BAKIYE,0) AS BAKIYE, PARABIRIMI
       FROM [${T.cari}] ${where}
-      ORDER BY FIRMAADI
+      ORDER BY ${orderBy}
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY
     `);
 
@@ -623,12 +634,15 @@ app.get("/api/banka/list", async (req, res) => {
     const bakiyeJoin = hasHareket
       ? `LEFT JOIN (SELECT BANKANO, SUM(BORC-ALACAK) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND`
       : "";
+    // Pasif (bu dönemde hiç hareketi olmayan) hesaplar listelenmez — kullanıcı
+    // isteği. Hareketi olmayan hesap = h.hareket NULL/0. Tablo yoksa hepsi gösterilir.
+    const aktifFilter = hasHareket ? " AND ISNULL(h.hareket,0) > 0" : "";
     const result = await pool.request().query(`
       SELECT b.IND, b.ADI, b.KOD, b.SUBE, ISNULL(b.SUBEADI,'') SUBEADI, b.IBAN, b.HESAPNO, b.PARABIRIMI,
              ${hasHareket ? "ISNULL(h.bakiye,0)" : "0"} AS BAKIYE,
              ${hasHareket ? "ISNULL(h.hareket,0)" : "0"} AS HAREKET
       FROM [${T.bankalar}] b ${bakiyeJoin}
-      WHERE ISNULL(b.STATUS,1)=1
+      WHERE ISNULL(b.STATUS,1)=1${aktifFilter}
       ORDER BY b.ADI`);
     // TL hesaplar: net / nakit (artı) / kredi (eksi). Döviz kasaları (İÇ KASA EURO
     // vb.) ayrı bir 'doviz' kovasında toplanır ve TL toplamına dahil edilmez.
@@ -701,6 +715,16 @@ app.get("/api/banka/hareket", async (req, res) => {
 });
 
 // ─── ÇEK / SENET: Liste (yon: giris|cikis) ───────────────────
+// Çek/senet TUTAR ve VADE bilgisi TBLCEK*/TBLSENET* tablolarında DEĞİL,
+// bordro hareket tablolarındadır (canlı doğrulandı F0101 D0017):
+//   verilen → TBLCARCIKHAREKET, alınan → TBLCARGIRHAREKET
+//   hr.IZAHAT = ödeme tipi (1=Nakit, 2=Çek, 3=Senet, 4=Kredi Kartı, 11=Banka/Havale)
+//   hr.BELGELINK = çek/senet tablosundaki IND, hr.EVRAKNO = bordro BASLIK.IND
+function bordroTables(firmaNo, donemNo, yon) {
+  const pfx = `F${firmaNo}D${donemNo}TBL${yon === "cikis" ? "CARCIK" : "CARGIR"}`;
+  return { hareket: `${pfx}HAREKET`, baslik: `${pfx}BASLIK` };
+}
+
 app.get("/api/cek", async (req, res) => {
   if (!requireConnection(req, res)) return;
   const { firmaNo, donemNo, yon = "giris" } = req.query;
@@ -708,20 +732,35 @@ app.get("/api/cek", async (req, res) => {
   const T = tableNames(firmaNo, donemNo);
   const tbl = yon === "cikis" ? T.cekCikis : T.cekGiris;
   const cari = T.cari;
-  if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0 });
+  if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0, toplam: 0, yon });
   try {
     const banka = T.bankalar;
     const hasBanka = await validateTableName(banka);
+    // TAKIPNO CEKGIRIS'te var, CEKCIKIS'te YOK → kolonları dinamik seç
+    const colRs = await pool.request().input("t", sql.NVarChar, tbl)
+      .query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@t`);
+    const have = new Set(colRs.recordset.map(c => c.COLUMN_NAME.toUpperCase()));
+    const takipCol = have.has("TAKIPNO") ? "ck.TAKIPNO" : "NULL AS TAKIPNO";
+    // Tutar + vade bordro satırından (IZAHAT=2=çek, BELGELINK=çek IND)
+    const B = bordroTables(firmaNo, donemNo, yon);
+    const hasBordro = await validateTableName(B.hareket);
+    const bordroApply = hasBordro ? `
+      OUTER APPLY (SELECT TOP 1 h.TUTAR, h.VADE FROM [${B.hareket}] h
+                   WHERE h.BELGELINK = ck.IND AND h.IZAHAT = 2
+                   ORDER BY CASE WHEN h.BELGENO = ck.BELGENO THEN 0 ELSE 1 END, h.IND DESC) hr` : "";
     const result = await pool.request().query(`
       SELECT TOP 1000 ck.IND, ck.BELGENO, ck.KESIDEEDEN, ck.KESIDEYERI, ck.SUBE, ck.KESIDETARIHI,
-             ck.BANKAHESAPNO, ck.EVRAKNO, ck.TAKIPNO, ck.FIRMANO,
+             ck.BANKAHESAPNO, ck.EVRAKNO, ${takipCol}, ck.FIRMANO,
+             ${hasBordro ? "CAST(hr.TUTAR AS DECIMAL(18,2)) AS TUTAR, hr.VADE" : "NULL AS TUTAR, NULL AS VADE"},
              COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan,
              ${hasBanka ? "b.ADI" : "NULL"} AS bankaAdi
       FROM [${tbl}] ck
       LEFT JOIN [${cari}] c ON c.IND = ck.FIRMANO
       ${hasBanka ? `LEFT JOIN [${banka}] b ON b.IND = ck.BANKA` : ""}
-      ORDER BY ck.KESIDETARIHI DESC`);
-    res.json({ success: true, data: result.recordset, count: result.recordset.length, yon });
+      ${bordroApply}
+      ORDER BY ${hasBordro ? "ISNULL(hr.VADE, ck.KESIDETARIHI)" : "ck.KESIDETARIHI"} DESC`);
+    const toplam = result.recordset.reduce((s, r) => s + (Number(r.TUTAR) || 0), 0);
+    res.json({ success: true, data: result.recordset, count: result.recordset.length, toplam, yon });
   } catch (err) {
     console.error("cek hatası:", err.message);
     res.status(500).json({ success: false, message: err.message });
@@ -735,11 +774,33 @@ app.get("/api/senet", async (req, res) => {
   const T = tableNames(firmaNo, donemNo);
   const tbl = yon === "cikis" ? T.senetCikis : T.senetGiris;
   const cari = T.cari;
-  if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0 });
   try {
+    // Asıl kaynak: bordro satırları (IZAHAT=3=senet). TBLSENET* satırlarında
+    // TUTAR/KESIDETARIHI bu DB'de boş; TUTAR ve VADE bordro hareketinde.
+    const B = bordroTables(firmaNo, donemNo, yon);
+    if (await validateTableName(B.hareket)) {
+      const hasBaslik = await validateTableName(B.baslik);
+      const hasSn = await validateTableName(tbl);
+      const result = await pool.request().query(`
+        SELECT TOP 1000 hr.BELGENO, CAST(ISNULL(hr.TUTAR,0) AS DECIMAL(18,2)) AS TUTAR, hr.VADE,
+               ${hasBaslik ? "bs.TARIH" : "NULL AS TARIH"},
+               ${hasSn ? "sn.KESIDEEDEN, sn.VERGIDAIRESI, sn.VERGINO, sn.KESIDETARIHI" : "NULL AS KESIDEEDEN, NULL AS VERGIDAIRESI, NULL AS VERGINO, NULL AS KESIDETARIHI"},
+               hr.FIRMANO, COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan
+        FROM [${B.hareket}] hr
+        LEFT JOIN [${cari}] c ON c.IND = hr.FIRMANO
+        ${hasBaslik ? `LEFT JOIN [${B.baslik}] bs ON bs.IND = hr.EVRAKNO` : ""}
+        ${hasSn ? `LEFT JOIN [${tbl}] sn ON sn.IND = hr.BELGELINK` : ""}
+        WHERE hr.IZAHAT = 3
+        ORDER BY hr.VADE DESC`);
+      const toplam = result.recordset.reduce((s, r) => s + (Number(r.TUTAR) || 0), 0);
+      return res.json({ success: true, data: result.recordset, count: result.recordset.length, toplam, yon });
+    }
+    // Bordro tablosu yoksa eski yol: doğrudan senet tablosu
+    if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0, toplam: 0, yon });
     const result = await pool.request().query(`
       SELECT TOP 1000 sn.BELGENO, sn.KESIDEEDEN, sn.KESIDETARIHI, sn.VERGIDAIRESI, sn.VERGINO,
-             ISNULL(sn.TUTAR,0) AS TUTAR, sn.FIRMANO, COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan
+             ISNULL(sn.TUTAR,0) AS TUTAR, NULL AS VADE, sn.KESIDETARIHI AS TARIH,
+             sn.FIRMANO, COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan
       FROM [${tbl}] sn
       LEFT JOIN [${cari}] c ON c.IND = sn.FIRMANO
       ORDER BY sn.KESIDETARIHI DESC`);
@@ -791,58 +852,46 @@ app.get("/api/satis-karlilik", async (req, res) => {
   if (!(await validateTableName(T.satFat))) return res.json({ success: true, data: [], ozet: {} });
   try {
     const request = pool.request();
-    let dateF = "", mDateF = "";
+    let dateF = "", searchF = "";
     if (startDate && endDate) {
       request.input("sd", sql.Date, startDate); request.input("ed", sql.Date, endDate);
       dateF = " AND CAST(sf.TARIH AS DATE) BETWEEN @sd AND @ed";
-      mDateF = " AND CAST(TARIH AS DATE) BETWEEN @sd AND @ed";
     }
-    let searchF = "";
     if (search.trim()) { request.input("q", sql.NVarChar, `%${search.trim()}%`); searchF = " AND (sf.MALINCINSI LIKE @q OR sf.STOKKODU LIKE @q)"; }
 
-    // ─── COGS satış-çıkış izahat kodunu OTOMATİK tespit ──────────
-    // Stok hareket satış-çıkış kodu firmaya göre değişir (bu DB=33, başka=21).
-    // Doğru kodu bul: cost-değerli (BIRIMFIYAT≈BIRIMMALIYET), satılan stoklarla
-    // örtüşen, devir/iade hariç stok-çıkışlarından en yüksek tutarlı. Örtüşme
-    // şartı üretim sarfını (hammadde, satışla örtüşmez) eler.
-    let salesOutCode = IZ.SATIS; // güvenli varsayılan
-    if (await validateTableName(T.stokHareket)) {
-      const det = await pool.request().query(`
-        SELECT TOP 1 CAST(sh.IZAHAT AS INT) code
-        FROM [${T.stokHareket}] sh
-        WHERE sh.CIKAN>0 AND ISNULL(sh.IADE,0)=0
-          AND CAST(sh.IZAHAT AS INT) NOT IN (${IZ.DEVIR_GIRIS},${IZ.DEVIR_CIKIS})
-          AND ABS(ISNULL(sh.BIRIMFIYAT,0)-ISNULL(sh.BIRIMMALIYET,0))<0.01
-          AND EXISTS (SELECT 1 FROM [${T.satFat}] sf WHERE sf.STOKNO=sh.STOKNO)
-        GROUP BY sh.IZAHAT ORDER BY SUM(sh.TUTAR) DESC`);
-      if (det.recordset.length) salesOutCode = det.recordset[0].code;
-    }
-
-    // Gelir: satış faturası (GERCEKTOPLAM). Maliyet: tespit edilen satış-çıkış
-    // kodundaki hareketler; bu satırlarda TUTAR = miktar × birim maliyet (COGS).
+    // ─── Maliyet = satış faturası satırındaki AFIYATI (alış/maliyet fiyatı) ──
+    // Vega, her satış satırına o anki birim maliyeti AFIYATI olarak yazar
+    // (canlı doğrulandı F0101: 12346/12860 satır dolu, AFIYATI≤FIYATI). Kâr =
+    // GERCEKTOPLAM − AFIYATI×MIKTAR. Stok hareket/COGS-kod tahminine gerek yok.
+    // NOT: AFIYATI=0 satırlar (hizmet/maliyetsiz) %100 marj görünür — Vega da öyle.
     const result = await request.query(`
-      WITH gelir AS (
-        SELECT STOKNO, MAX(MALINCINSI) malincinsi, MAX(STOKKODU) stokkodu,
-               SUM(MIKTAR) miktar, SUM(GERCEKTOPLAM) satis
-        FROM [${T.satFat}] sf WHERE 1=1 ${dateF} ${searchF} GROUP BY STOKNO
-      ),
-      maliyet AS (
-        SELECT STOKNO, SUM(TUTAR) maliyet, SUM(CIKAN) cikan
-        FROM [${T.stokHareket}] WHERE IZAHAT='${salesOutCode}' AND CIKAN>0 AND ISNULL(IADE,0)=0 ${mDateF}
-        GROUP BY STOKNO
-      )
-      SELECT TOP 500 g.STOKNO, g.malincinsi, g.stokkodu, g.miktar, g.satis,
-             ISNULL(m.maliyet,0) maliyet,
-             CASE WHEN g.miktar<>0 THEN ISNULL(m.maliyet,0)/g.miktar ELSE 0 END birimMaliyet,
-             (g.satis - ISNULL(m.maliyet,0)) kar
-      FROM gelir g LEFT JOIN maliyet m ON m.STOKNO=g.STOKNO
-      ORDER BY g.satis DESC`);
+      SELECT TOP 500 STOKNO,
+             MAX(MALINCINSI) malincinsi, MAX(STOKKODU) stokkodu,
+             SUM(MIKTAR) miktar,
+             CAST(SUM(GERCEKTOPLAM) AS DECIMAL(18,2)) satis,
+             CAST(SUM(ISNULL(AFIYATI,0)*MIKTAR) AS DECIMAL(18,2)) maliyet,
+             CAST(SUM(GERCEKTOPLAM - ISNULL(AFIYATI,0)*MIKTAR) AS DECIMAL(18,2)) kar,
+             CASE WHEN SUM(MIKTAR)<>0 THEN CAST(SUM(ISNULL(AFIYATI,0)*MIKTAR)/SUM(MIKTAR) AS DECIMAL(18,2)) ELSE 0 END birimMaliyet
+      FROM [${T.satFat}] sf WHERE 1=1 ${dateF} ${searchF}
+      GROUP BY STOKNO ORDER BY SUM(GERCEKTOPLAM) DESC`);
 
-    const ozet = result.recordset.reduce((a, r) => {
-      a.satis += r.satis || 0; a.maliyet += r.maliyet || 0; a.kar += r.kar || 0; return a;
-    }, { satis: 0, maliyet: 0, kar: 0 });
+    // Özet TÜM satırlar üzerinden (tabloda yalnız TOP 500 gösterilir; özet
+    // capped olmamalı). Aynı filtreleri ikinci sorguda tekrar bağla.
+    const req2 = pool.request();
+    if (startDate && endDate) { req2.input("sd", sql.Date, startDate); req2.input("ed", sql.Date, endDate); }
+    if (search.trim()) req2.input("q", sql.NVarChar, `%${search.trim()}%`);
+    const oz = (await req2.query(`
+      SELECT CAST(SUM(GERCEKTOPLAM) AS DECIMAL(18,2)) satis,
+             CAST(SUM(ISNULL(AFIYATI,0)*MIKTAR) AS DECIMAL(18,2)) maliyet,
+             CAST(SUM(GERCEKTOPLAM - ISNULL(AFIYATI,0)*MIKTAR) AS DECIMAL(18,2)) kar,
+             COUNT(DISTINCT STOKNO) kalemSayisi
+      FROM [${T.satFat}] sf WHERE 1=1 ${dateF} ${searchF}`)).recordset[0];
+    const ozet = {
+      satis: Number(oz.satis) || 0, maliyet: Number(oz.maliyet) || 0, kar: Number(oz.kar) || 0,
+      kalemSayisi: oz.kalemSayisi || 0, gosterilen: result.recordset.length,
+      maliyetKaynak: "AFIYATI", // maliyet satış satırı alış fiyatından
+    };
     ozet.marj = ozet.satis ? (ozet.kar / ozet.satis) * 100 : 0;
-    ozet.maliyetKodu = salesOutCode; // hangi izahat kodundan COGS alındı
 
     res.json({ success: true, data: result.recordset, ozet });
   } catch (err) {
@@ -861,7 +910,8 @@ app.get("/api/home", async (req, res) => {
     const out = {
       kasaNet: 0, kasaKirilim: [],                              // GERÇEK NAKİT (kasa)
       bankaToplam: {}, bankaNakit: {}, bankaKredi: {}, bankaDoviz: {}, hesapSayisi: 0,
-      cekSayisi: 0, senetSayisi: 0, tahsilatSayisi: 0, tahsilatToplam: 0,
+      cekSayisi: 0, cekCikisSayisi: 0, senetSayisi: 0, senetCikisSayisi: 0,
+      tahsilatSayisi: 0, tahsilatToplam: 0,
     };
 
     // ─── GERÇEK NAKİT: Kasa (TBLKASA) net = SUM((GELIR-GIDER)×KUR), devir dahil ──
@@ -881,7 +931,7 @@ app.get("/api/home", async (req, res) => {
         SELECT b.ADI, b.PARABIRIMI, ISNULL(h.bakiye,0) bakiye, ISNULL(h.hareket,0) hareket
         FROM [${T.bankalar}] b
         LEFT JOIN (SELECT BANKANO, SUM(BORC-ALACAK) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND
-        WHERE ISNULL(b.STATUS,1)=1`);
+        WHERE ISNULL(b.STATUS,1)=1 AND ISNULL(h.hareket,0) > 0`);
       b.recordset.forEach(r => {
         if (r.hareket > 0 || r.bakiye !== 0) out.hesapSayisi++;
         const dov = detectDoviz(r.ADI, r.PARABIRIMI);
@@ -892,7 +942,9 @@ app.get("/api/home", async (req, res) => {
       });
     }
     if (await validateTableName(T.cekGiris)) out.cekSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.cekGiris}]`)).recordset[0].n;
+    if (await validateTableName(T.cekCikis)) out.cekCikisSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.cekCikis}]`)).recordset[0].n;
     if (await validateTableName(T.senetGiris)) out.senetSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.senetGiris}]`)).recordset[0].n;
+    if (await validateTableName(T.senetCikis)) out.senetCikisSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.senetCikis}]`)).recordset[0].n;
     if (await validateTableName(T.cariHareket)) {
       const v = (await pool.request().query(`SELECT COUNT(*) n, ISNULL(SUM(ALACAK),0) t FROM [${T.cariHareket}] WHERE IZAHAT=${IZ.TAHSILAT}`)).recordset[0];
       out.tahsilatSayisi = v.n; out.tahsilatToplam = v.t;

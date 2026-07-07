@@ -54,7 +54,7 @@ export default function SatisKarlilik() {
       </div>
 
       <div className="glass-card overflow-hidden">
-        <div className="px-5 py-3 border-b border-white/5 text-sm text-dark-400">{loading ? "Yükleniyor..." : `${res.data.length} stok kalemi`}</div>
+        <div className="px-5 py-3 border-b border-white/5 text-sm text-dark-400">{loading ? "Yükleniyor..." : (o.kalemSayisi > res.data.length ? `${o.kalemSayisi} stok kalemi (en yüksek ${res.data.length} satış gösteriliyor)` : `${res.data.length} stok kalemi`)}</div>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead><tr className="bg-dark-800/60 text-dark-400 text-xs uppercase">

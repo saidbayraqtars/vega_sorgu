@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useConnection } from "../context/ConnectionContext";
-import { apiGet, formatTL, formatNumber } from "../utils/api";
+import { apiGet, formatTL, formatMoney, formatNumber } from "../utils/api";
 
 export default function BankaRaporlari() {
   const { selectedFirma, selectedDonem } = useConnection();
@@ -46,7 +46,7 @@ export default function BankaRaporlari() {
             const dv = Object.entries(res.doviz || {}).filter(([, v]) => Number(v) !== 0);
             return dv.length === 0
               ? <p className="text-2xl font-bold mt-2 text-dark-500">—</p>
-              : dv.map(([pb, v]) => <p key={pb} className="text-lg font-bold mt-1 text-amber-400">{formatNumber(v)} {pb}</p>);
+              : dv.map(([pb, v]) => <p key={pb} className="text-lg font-bold mt-1 text-amber-400">{formatMoney(v, pb)}</p>);
           })()}
         </div>
         <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-600/20 to-blue-800/20 p-6">
@@ -78,7 +78,7 @@ export default function BankaRaporlari() {
                     ? <span className="px-2 py-0.5 rounded-md bg-amber-500/15 text-amber-300 text-xs font-semibold">{b.DOVIZ}</span>
                     : <span className="text-dark-300">TL</span>}</td>
                   <td className="px-4 py-3 text-right text-dark-400">{b.HAREKET}</td>
-                  <td className={`px-4 py-3 text-right font-semibold ${b.BAKIYE < 0 ? "text-red-400" : "text-emerald-400"}`}>{formatTL(b.BAKIYE)}</td>
+                  <td className={`px-4 py-3 text-right font-semibold ${b.BAKIYE < 0 ? "text-red-400" : b.DOVIZ ? "text-amber-300" : "text-emerald-400"}`}>{b.DOVIZ ? formatMoney(b.BAKIYE, b.DOVIZ) : formatTL(b.BAKIYE)}</td>
                 </tr>
               ))}
               {!loading && res.data.length === 0 && <tr><td colSpan={6} className="px-4 py-12 text-center text-dark-500">Banka hesabı bulunamadı</td></tr>}

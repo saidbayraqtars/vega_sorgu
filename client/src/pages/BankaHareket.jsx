@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useConnection } from "../context/ConnectionContext";
 import { apiGet, formatTL, formatDate } from "../utils/api";
+import { getBankaIzahat } from "../constants/izahat";
 
 export default function BankaHareket() {
   const { selectedFirma, selectedDonem } = useConnection();
@@ -88,7 +89,7 @@ export default function BankaHareket() {
                 <tr key={i} className="border-t border-white/5 hover:bg-white/5">
                   <td className="px-4 py-3 text-dark-300 font-mono text-xs">{formatDate(h.TARIH)}</td>
                   <td className="px-4 py-3 text-dark-200">{h.bankaAdi || "—"}{h.bankaSube ? <span className="text-dark-500"> / {h.bankaSube}</span> : ""}</td>
-                  <td className="px-4 py-3 text-dark-300">{h.IZAHAT}</td>
+                  <td className="px-4 py-3 text-dark-300">{getBankaIzahat(h.IZAHAT)}</td>
                   <td className="px-4 py-3 text-dark-400 font-mono text-xs">{h.EVRAKNO}</td>
                   <td className="px-4 py-3 text-right text-emerald-400">{h.BORC ? formatTL(h.BORC) : "—"}</td>
                   <td className="px-4 py-3 text-right text-red-400">{h.ALACAK ? formatTL(h.ALACAK) : "—"}</td>

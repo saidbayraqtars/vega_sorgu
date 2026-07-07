@@ -43,17 +43,17 @@ export default function SenetPortfoy() {
           <table className="w-full text-sm">
             <thead><tr className="bg-dark-800/60 text-dark-400 text-xs uppercase">
               <th className="px-4 py-3 text-left">Belge No</th><th className="px-4 py-3 text-left">Keşideci</th>
-              <th className="px-4 py-3 text-left">Cari</th><th className="px-4 py-3 text-left">Vergi Dairesi</th>
-              <th className="px-4 py-3 text-left">Keşide Tarihi</th><th className="px-4 py-3 text-right">Tutar</th>
+              <th className="px-4 py-3 text-left">Cari</th><th className="px-4 py-3 text-left">Bordro Tarihi</th>
+              <th className="px-4 py-3 text-left">Vade</th><th className="px-4 py-3 text-right">Tutar</th>
             </tr></thead>
             <tbody>
               {res.data.map((s, i) => (
                 <tr key={i} className="border-t border-white/5 hover:bg-white/5">
-                  <td className="px-4 py-3 text-white font-mono text-xs">{s.BELGENO}</td>
+                  <td className="px-4 py-3 text-white font-mono text-xs">{s.BELGENO || "—"}</td>
                   <td className="px-4 py-3 text-dark-200">{s.KESIDEEDEN || "—"}</td>
                   <td className="px-4 py-3 text-dark-300">{s.cariUnvan || "—"}</td>
-                  <td className="px-4 py-3 text-dark-400">{s.VERGIDAIRESI || "—"}</td>
-                  <td className="px-4 py-3 text-dark-300 font-mono text-xs">{formatDate(s.KESIDETARIHI)}</td>
+                  <td className="px-4 py-3 text-dark-300 font-mono text-xs">{formatDate(s.TARIH)}</td>
+                  <td className="px-4 py-3 text-dark-300 font-mono text-xs">{formatDate(s.VADE || s.KESIDETARIHI)}</td>
                   <td className="px-4 py-3 text-right text-amber-400 font-semibold">{s.TUTAR ? formatTL(s.TUTAR) : "—"}</td>
                 </tr>
               ))}
