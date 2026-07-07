@@ -19,7 +19,11 @@ export function ConnectionProvider({ children }) {
   const [currentPage, setCurrentPage] = useState("home"); // sidebar aktif sayfa
 
   // ─── Açılış: kurulu mu + otomatik bağlan (PIN YOK) ──────────
-  const bootstrap = useCallback(async () => {
+  // Kayıtlı config VARSA ama bağlanamadıysa (ör. Windows açılışında SQL Server
+  // servisi henüz hazır değil) FULL setup ekranına düşürme — birkaç kez sessizce
+  // tekrar dene. Sadece config yoksa veya eski PIN formatındaysa setup göster.
+  const bootstrap = useCallback(async (attempt = 0) => {
+    const MAX_RETRY = 6;      // ~ 6 × 2sn = 12sn boot toleransı
     try {
       const res = await fetch(`${API_BASE}/bootstrap`);
       const data = await res.json();
@@ -29,15 +33,32 @@ export function ConnectionProvider({ children }) {
         setConnectionInfo({ server: data.server || "Kayıtlı Sunucu", database: data.database || "Kayıtlı Veritabanı" });
         setFirmalar(data.firmalar || []);
         setDonemler(data.donemler || []);
+        setError(null);
         setStep("select-period");
+        return;
+      }
+      // Config var (isSetup) ama bağlanamadı ve eski-format DEĞİL → geçici sorun,
+      // tekrar dene (SQL geç açılması vb.). Kullanıcıdan bilgi İSTEME.
+      if (data.isSetup && !data.needsReconfig && attempt < MAX_RETRY) {
+        setStep("loading");
+        setError(attempt >= 1 ? "Veritabanına bağlanılıyor… (sunucu başlatılıyor olabilir)" : null);
+        setTimeout(() => bootstrap(attempt + 1), 2000);
         return;
       }
       if (data.needsReconfig) {
         setError("Kayıtlı bağlantı eski PIN'li formatta. Lütfen bağlantı bilgilerini bir kez daha girin.");
+      } else if (data.isSetup) {
+        setError("Kayıtlı sunucuya ulaşılamadı. Bilgileri kontrol edip tekrar deneyin.");
       }
-      // Kurulu değil ya da bağlanamadı → kurulum ekranı
+      // Kurulu değil ya da tekrar denemeler bitti → kurulum ekranı
       setStep("setup");
     } catch (err) {
+      // Sunucu (Express) henüz ayakta değilse de birkaç kez dene.
+      if (attempt < MAX_RETRY) {
+        setStep("loading");
+        setTimeout(() => bootstrap(attempt + 1), 2000);
+        return;
+      }
       setError("Sunucuya ulaşılamıyor.");
       setStep("setup");
     }

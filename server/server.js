@@ -34,29 +34,39 @@ const baseDir = process.env.VEGA_BASE_DIR || (isPkg ? path.dirname(process.execP
 const CONFIG_PATH = path.join(baseDir, "config.json");
 
 // ─── Yardımcı: Şifreleme (PIN YOK) ───────────────────────────
-// Şifre config.json içinde makineye bağlı sabit anahtarla obfuske edilir.
-// Amaç: parolayı düz metin bırakmamak; PIN girişi olmadan otomatik çözülür.
-const APP_SECRET = "vega-sorgu-static-key-v2::" + (os.hostname() || "local");
+// Şifre config.json içinde sabit anahtarla obfuske edilir (gerçek güvenlik
+// değil; parolayı düz metin bırakmamak için). v3 = MAKİNEDEN BAĞIMSIZ sabit
+// anahtar → hostname değişse/farklı olsa da config her açılışta çözülür, tekrar
+// setup gerekmez. v2 (hostname'e bağlı) eski configleri okumak için tutulur ve
+// ilk başarılı bağlantıda v3'e migrate edilir.
+const APP_SECRET = "vega-sorgu-static-key-v3-stable-2026";
+const APP_SECRET_LEGACY = "vega-sorgu-static-key-v2::" + (os.hostname() || "local");
+const keyOf = (secret) => crypto.createHash("sha256").update(secret).digest();
 
 function encrypt(text) {
-  const key = crypto.createHash("sha256").update(APP_SECRET).digest();
   const iv = crypto.randomBytes(16);
-  const cipher = crypto.createCipheriv("aes-256-cbc", key, iv);
+  const cipher = crypto.createCipheriv("aes-256-cbc", keyOf(APP_SECRET), iv);
   let encrypted = cipher.update(text, "utf8", "hex");
   encrypted += cipher.final("hex");
   return iv.toString("hex") + ":" + encrypted;
 }
 
-function decrypt(text) {
-  const key = crypto.createHash("sha256").update(APP_SECRET).digest();
+function decryptWith(secret, text) {
   const parts = text.split(":");
   const iv = Buffer.from(parts.shift(), "hex");
   const encryptedText = Buffer.from(parts.join(":"), "hex");
-  const decipher = crypto.createDecipheriv("aes-256-cbc", key, iv);
+  const decipher = crypto.createDecipheriv("aes-256-cbc", keyOf(secret), iv);
   let decrypted = decipher.update(encryptedText, "hex", "utf8");
   decrypted += decipher.final("utf8");
   return decrypted;
 }
+
+// Önce v3 sabit anahtar, olmazsa v2 (hostname) — geriye dönük. { text, legacy }.
+function decryptEx(text) {
+  try { return { text: decryptWith(APP_SECRET, text), legacy: false }; }
+  catch { return { text: decryptWith(APP_SECRET_LEGACY, text), legacy: true }; }
+}
+function decrypt(text) { return decryptEx(text).text; }
 
 // ─── Yardımcı: Pool oluştur ──────────────────────────────────
 async function createPool(config) {
@@ -139,21 +149,52 @@ async function connectFromConfig() {
   }
   // Eski PIN'li format (pinHash var) → statik anahtarla çözülemez, yeniden kurulum gerekir.
   if (saved.pinHash) return { isSetup: true, connected: false, needsReconfig: true };
+  let password, legacy = false;
   try {
-    const password = decrypt(saved.password);
-    const dbConfig = {
-      server: saved.server, database: saved.database,
-      username: saved.username, port: saved.port, password,
-    };
-    if (pool) { await pool.close(); pool = null; }
-    pool = await createPool(dbConfig);
-    currentConfig = dbConfig;
-    const { firmalar, donemler } = await loadFirmaDonem();
-    return { isSetup: true, connected: true, firmalar, donemler,
-             server: saved.server, database: saved.database };
+    const dec = decryptEx(saved.password);
+    password = dec.text; legacy = dec.legacy;
   } catch (err) {
-    console.error("Oto-bağlantı hatası:", err.message);
-    return { isSetup: true, connected: false, message: err.message };
+    // Parola hiçbir anahtarla çözülemedi (bozuk config) → yeniden kurulum.
+    console.error("Config parola çözme hatası:", err.message);
+    return { isSetup: true, connected: false, needsReconfig: true };
+  }
+  const dbConfig = {
+    server: saved.server, database: saved.database,
+    username: saved.username, port: saved.port, password,
+  };
+  // SQL Server açılışta (Windows boot) henüz hazır olmayabilir → birkaç kez dene.
+  let lastErr = null;
+  for (let attempt = 1; attempt <= 4; attempt++) {
+    try {
+      if (pool) { await pool.close(); pool = null; }
+      pool = await createPool(dbConfig);
+      currentConfig = dbConfig;
+      const { firmalar, donemler } = await loadFirmaDonem();
+      // Eski (hostname) anahtarla çözüldüyse v3 sabit anahtara migrate et.
+      if (legacy) saveConfigFile(saved, password);
+      return { isSetup: true, connected: true, firmalar, donemler,
+               server: saved.server, database: saved.database };
+    } catch (err) {
+      lastErr = err;
+      console.error(`Oto-bağlantı denemesi ${attempt}/4 başarısız:`, err.message);
+      if (attempt < 4) await new Promise(r => setTimeout(r, 1500));
+    }
+  }
+  return { isSetup: true, connected: false, message: lastErr?.message };
+}
+
+// Config'i v3 anahtarla diske yaz (obfuske parola). pinHash temizlenir.
+function saveConfigFile(base, plainPassword) {
+  try {
+    const out = {
+      server: base.server, database: base.database, username: base.username,
+      port: base.port, password: encrypt(plainPassword),
+    };
+    fs.writeFileSync(CONFIG_PATH, JSON.stringify(out, null, 2));
+    return true;
+  } catch (err) {
+    console.error("Config yazma hatası:", err.message);
+    return false;
   }
 }
 
@@ -206,16 +247,11 @@ app.post("/api/setup", async (req, res) => {
 
     const { firmalar, donemler } = await loadFirmaDonem();
 
-    // Ayarları makine anahtarıyla obfuske edip kaydet (PIN yok)
-    const savedConfig = {
-      server,
-      database,
-      username,
-      port,
-      password: encrypt(password),
-    };
-
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(savedConfig, null, 2));
+    // Ayarları sabit (v3) anahtarla obfuske edip kaydet (PIN yok, makineden bağımsız)
+    const saved = saveConfigFile({ server, database, username, port }, password);
+    if (!saved) {
+      return res.status(500).json({ success: false, message: "Bağlantı bilgileri diske kaydedilemedi. Uygulama yazma izni olan bir klasörde mi?" });
+    }
 
     res.json({
       success: true,
