@@ -65,14 +65,14 @@ export default function Home() {
         <StatCard title="Toplam Nakit (Kasa)" grad="from-cyan-600/20 to-blue-800/20" clr="text-cyan-400"
           value={loading ? "…" : formatTL(data?.kasaNet || 0)}
           sub={loading ? "" : `${data?.kasaKirilim?.length || 0} kasa · devir dahil`} />
-        <StatCard title="Çek Kayıtları" grad="from-rose-600/20 to-red-800/20" clr="text-rose-400"
+        <StatCard title="Çek Portföyü (Alınan)" grad="from-rose-600/20 to-red-800/20" clr="text-rose-400"
           onClick={() => setCurrentPage("cek")}
-          value={loading ? "…" : formatNumber((data?.cekSayisi || 0) + (data?.cekCikisSayisi || 0), 0)}
-          sub={loading ? "" : `${formatNumber(data?.cekSayisi || 0, 0)} alınan · ${formatNumber(data?.cekCikisSayisi || 0, 0)} verilen`} />
-        <StatCard title="Senet Kayıtları" grad="from-amber-600/20 to-orange-800/20" clr="text-amber-400"
+          value={loading ? "…" : formatTL(data?.cekAlinanTutar || 0)}
+          sub={loading ? "" : `Verilen ${formatTL(data?.cekVerilenTutar || 0)} · ${formatNumber(data?.cekSayisi || 0, 0)}/${formatNumber(data?.cekCikisSayisi || 0, 0)} adet`} />
+        <StatCard title="Senet Portföyü (Alınan)" grad="from-amber-600/20 to-orange-800/20" clr="text-amber-400"
           onClick={() => setCurrentPage("senet")}
-          value={loading ? "…" : formatNumber((data?.senetSayisi || 0) + (data?.senetCikisSayisi || 0), 0)}
-          sub={loading ? "" : `${formatNumber(data?.senetSayisi || 0, 0)} alınan · ${formatNumber(data?.senetCikisSayisi || 0, 0)} verilen`} />
+          value={loading ? "…" : formatTL(data?.senetAlinanTutar || 0)}
+          sub={loading ? "" : `Verilen ${formatTL(data?.senetVerilenTutar || 0)} · ${formatNumber(data?.senetSayisi || 0, 0)}/${formatNumber(data?.senetCikisSayisi || 0, 0)} adet`} />
         <StatCard title="Tahsilatlar" grad="from-violet-600/20 to-purple-800/20" clr="text-violet-400"
           onClick={() => setCurrentPage("tahsilat")}
           value={loading ? "…" : formatNumber(data?.tahsilatSayisi || 0, 0)}

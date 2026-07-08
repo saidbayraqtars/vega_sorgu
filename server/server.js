@@ -94,14 +94,16 @@ async function createPool(config) {
 }
 
 // ─── Yardımcı: Tablo adı doğrulama (SQL Injection koruması) ──
-async function validateTableName(tableName) {
+// includeViews=true → VIEW'ları da kabul et (VARES* çek/senet portföy view'ları için).
+async function validateTableName(tableName, includeViews = false) {
   if (!pool || !pool.connected) return false;
   const request = pool.request();
   request.input("tbl", sql.NVarChar, tableName);
+  const typeF = includeViews ? "TABLE_TYPE IN ('BASE TABLE','VIEW')" : "TABLE_TYPE = 'BASE TABLE'";
   const result = await request.query(`
-    SELECT COUNT(*) AS cnt 
-    FROM INFORMATION_SCHEMA.TABLES 
-    WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME = @tbl
+    SELECT COUNT(*) AS cnt
+    FROM INFORMATION_SCHEMA.TABLES
+    WHERE ${typeF} AND TABLE_NAME = @tbl
   `);
   return result.recordset[0].cnt > 0;
 }
@@ -347,11 +349,13 @@ app.get("/api/summary", async (req, res) => {
 
   const cariHareketTable = `F${firmaNo}D${donemNo}TBLCARIHAREKETLERI`;
   const kasaTable = `F${firmaNo}D${donemNo}TBLKASA`;
+  const tahsilBaslikTable = `F${firmaNo}D${donemNo}TBLTAHSILBASLIK`;
   console.log(`[Summary] Cari: ${cariHareketTable}, Kasa: ${kasaTable} (firmaNo=${firmaNo}, donemNo=${donemNo})`);
 
-  const [isCariValid, isKasaValid] = await Promise.all([
+  const [isCariValid, isKasaValid, isTahsilBaslikValid] = await Promise.all([
     validateTableName(cariHareketTable),
     validateTableName(kasaTable),
+    validateTableName(tahsilBaslikTable),
   ]);
 
   // Tarih filtresi yardımcısı (TARIH = belge/iş tarihi)
@@ -388,15 +392,16 @@ app.get("/api/summary", async (req, res) => {
       alis = codeSum(IZ.ALIS, 'alacak');         // alış faturası alacak
     }
 
-    // ─── Kasa nakit (GELIR / GIDER) ─────────────────────────────
+    // ─── Kasa nakit (GELIR / GIDER) — Arctos: ISLEMTIPI=1, KREDIKASA hariç, /KUR ──
     if (isKasaValid) {
       const req2 = pool.request();
       req2.input("startDate", sql.Date, startDate);
       req2.input("endDate", sql.Date, endDate);
+      const nakitWhere = kasaNakitWhere(tahsilBaslikTable, isTahsilBaslikValid);
       const kasaRes = await req2.query(`
-        SELECT ISNULL(SUM(GELIR*${KURX}), 0) AS gelir, ISNULL(SUM(GIDER*${KURX}), 0) AS gider
-        FROM [${kasaTable}]
-        WHERE 1 = 1${dateFilter('TARIH')}
+        SELECT ISNULL(SUM(GELIR/${KURX}), 0) AS gelir, ISNULL(SUM(GIDER/${KURX}), 0) AS gider
+        FROM [${kasaTable}] K
+        WHERE ${nakitWhere}${dateFilter('TARIH')}
       `);
       nakitGelir = kasaRes.recordset[0].gelir;
       nakitGider = kasaRes.recordset[0].gider;
@@ -486,17 +491,20 @@ app.get("/api/details", async (req, res) => {
     let details = [];
 
     if (type === 'nakit') {
-      // ─── Kasa nakit hareketleri ───────────────────────────────
+      // ─── Kasa nakit hareketleri (Arctos: ISLEMTIPI=1, KREDIKASA hariç, /KUR) ──
       if (await validateTableName(kasaTable)) {
+        const tahsilBaslikTable = `F${firmaNo}D${donemNo}TBLTAHSILBASLIK`;
+        const hasTB = await validateTableName(tahsilBaslikTable);
+        const nakitWhere = kasaNakitWhere(tahsilBaslikTable, hasTB);
         const result = await request.query(`
           SELECT
             TARIH AS ISLEMTARIHI,
-            (GELIR - GIDER) AS ALACAK,
+            (GELIR - GIDER)/${KURX} AS ALACAK,
             ACIKLAMA,
             BELGEIZAHAT,
             ACIKLAMA AS firmaUnvan
-          FROM [${kasaTable}]
-          WHERE 1 = 1${dateFilter('TARIH')}
+          FROM [${kasaTable}] K
+          WHERE ${nakitWhere}${dateFilter('TARIH')}
         `);
         details = result.recordset;
       }
@@ -541,10 +549,16 @@ function tableNames(firmaNo, donemNo) {
     bankalar: `F${firmaNo}TBLBANKALAR`,
     bankaHareket: `F${firmaNo}D${donemNo}TBLBANKAHAREKETLERI`,
     kasa: `F${firmaNo}D${donemNo}TBLKASA`,
+    tahsilBaslik: `F${firmaNo}D${donemNo}TBLTAHSILBASLIK`,
     cekGiris: `F${firmaNo}D${donemNo}TBLCEKGIRIS`,
     cekCikis: `F${firmaNo}D${donemNo}TBLCEKCIKIS`,
     senetGiris: `F${firmaNo}D${donemNo}TBLSENETGIRIS`,
     senetCikis: `F${firmaNo}D${donemNo}TBLSENETCIKIS`,
+    // Çek/senet TUTAR toplamları için Arctos portföy view'ları (ALINAN=varlık, VERILEN=borç)
+    cekAlinan: `F${firmaNo}D${donemNo}VARESALINANCEKLER`,
+    cekVerilen: `F${firmaNo}D${donemNo}VARESVERILENCEKLER`,
+    senetAlinan: `F${firmaNo}D${donemNo}VARESALINANSENETLER`,
+    senetVerilen: `F${firmaNo}D${donemNo}VARESVERILENSENETLER`,
     visaHareket: `F${firmaNo}D${donemNo}TBLVISAHAREKETLERI`,
     stoklar: `F${firmaNo}TBLSTOKLAR`,
     stokHareket: `F${firmaNo}D${donemNo}TBLSTOKHAREKETLERI`,
@@ -572,6 +586,23 @@ function detectDoviz(name, parabirimi) {
 
 // KUR ile TL'ye normalize eden SQL parçası (KUR 0/NULL → 1 kabul)
 const KURX = "ISNULL(NULLIF(KUR,0),1)";
+
+// ─── KASA "Toplam Kasa Bakiyesi" — Arctos ile birebir ────────
+// Arctos/Vega canlı SQL izleyici (Extended Events) ile yakalandı:
+//   SELECT SUM((GELIR-GIDER)/KUR) ... WHERE ISLEMTIPI=1
+//     AND CASE WHEN BELGEIZAHAT=15 THEN (TBLTAHSILBASLIK.OZELKOD3) ELSE '' END <> 'KREDIKASA'
+// 1) Değer: (GELIR-GIDER)/KUR (döviz kasa kendi biriminde; TL'de KUR=1 → etkisiz).
+// 2) ISLEMTIPI=1: yalnız fiziksel nakit. Tip 2/3 = virman/çek-senet transferi (nakit DEĞİL).
+// 3) KREDIKASA hariç: BELGEIZAHAT=15 + bağlı tahsilat başlığı OZELKOD3='KREDIKASA' olan
+//    POS/kredi kartı tahsilatları nakde sayılmaz.
+// Kasa tablosu sorgularında alias 'K' zorunlu.
+const KASA_NAKIT_VAL = `(GELIR-GIDER)/${KURX}`;
+function kasaNakitWhere(tahsilBaslikTable, hasTahsilBaslik) {
+  const kredikasa = hasTahsilBaslik
+    ? ` AND CASE WHEN K.BELGEIZAHAT=15 THEN (SELECT ISNULL(OZELKOD3,'') FROM [${tahsilBaslikTable}] WHERE IND=K.BELGELINK AND BELGETIPI=K.BELGEIZAHAT) ELSE '' END <> 'KREDIKASA'`
+    : "";
+  return `K.ISLEMTIPI=1${kredikasa}`;
+}
 
 // ─── CARİ: Liste (arama + bakiye filtresi + sıralama + sayfalama) ──
 // bakiye: borclu (BAKIYE>0, cari bize borçlu) | alacakli (BAKIYE<0, biz borçluyuz) | bakiyesiz
@@ -638,10 +669,11 @@ app.get("/api/cari/detail", async (req, res) => {
     if (await validateTableName(T.cariHareket)) {
       const r2 = pool.request();
       r2.input("ind", sql.Int, parseInt(ind));
+      // Bakiye = SUM(BORC-ALACAK), KREDIHESABI satırları hariç (Arctos ile birebir)
       const o = (await r2.query(`
         SELECT ISNULL(SUM(BORC),0) giris, ISNULL(SUM(ALACAK),0) cikis,
                ISNULL(SUM(BORC-ALACAK),0) net, COUNT(*) islem
-        FROM [${T.cariHareket}] WHERE FIRMANO=@ind`)).recordset[0];
+        FROM [${T.cariHareket}] WHERE FIRMANO=@ind AND ISNULL(OZELKOD,'')<>'KREDIHESABI'`)).recordset[0];
       ozet = o;
       const r3 = pool.request();
       r3.input("ind", sql.Int, parseInt(ind));
@@ -668,17 +700,18 @@ app.get("/api/banka/list", async (req, res) => {
   try {
     const hasHareket = await validateTableName(T.bankaHareket);
     const bakiyeJoin = hasHareket
-      ? `LEFT JOIN (SELECT BANKANO, SUM(BORC-ALACAK) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND`
+      ? `LEFT JOIN (SELECT BANKANO, SUM((BORC-ALACAK)/${KURX}) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND`
       : "";
     // Pasif (bu dönemde hiç hareketi olmayan) hesaplar listelenmez — kullanıcı
     // isteği. Hareketi olmayan hesap = h.hareket NULL/0. Tablo yoksa hepsi gösterilir.
+    // Arctos ile birebir: MUSBANKA=0 (müşteri bankası hariç), STATUS<>2, bakiye (BORC-ALACAK)/KUR.
     const aktifFilter = hasHareket ? " AND ISNULL(h.hareket,0) > 0" : "";
     const result = await pool.request().query(`
       SELECT b.IND, b.ADI, b.KOD, b.SUBE, ISNULL(b.SUBEADI,'') SUBEADI, b.IBAN, b.HESAPNO, b.PARABIRIMI,
              ${hasHareket ? "ISNULL(h.bakiye,0)" : "0"} AS BAKIYE,
              ${hasHareket ? "ISNULL(h.hareket,0)" : "0"} AS HAREKET
       FROM [${T.bankalar}] b ${bakiyeJoin}
-      WHERE ISNULL(b.STATUS,1)=1${aktifFilter}
+      WHERE ISNULL(b.MUSBANKA,0)=0 AND (b.STATUS<>2 OR b.STATUS IS NULL)${aktifFilter}
       ORDER BY b.ADI`);
     // TL hesaplar: net / nakit (artı) / kredi (eksi). Döviz kasaları (İÇ KASA EURO
     // vb.) ayrı bir 'doviz' kovasında toplanır ve TL toplamına dahil edilmez.
@@ -898,17 +931,21 @@ app.get("/api/satis-karlilik", async (req, res) => {
     // ─── Maliyet = satış faturası satırındaki AFIYATI (alış/maliyet fiyatı) ──
     // Vega, her satış satırına o anki birim maliyeti AFIYATI olarak yazar
     // (canlı doğrulandı F0101: 12346/12860 satır dolu, AFIYATI≤FIYATI). Kâr =
-    // GERCEKTOPLAM − AFIYATI×MIKTAR. Stok hareket/COGS-kod tahminine gerek yok.
+    // GERCEKTOPLAM − AFIYATI×MIKTAR − MASRAF. Stok hareket/COGS-kod tahminine gerek yok.
     // NOT: AFIYATI=0 satırlar (hizmet/maliyetsiz) %100 marj görünür — Vega da öyle.
+    // Arctos kâr analizi ile birebir (canlı izleyici): STOKTIPI 12/13/14 (hizmet/masraf/
+    // promosyon) ve DETAY<>0 (set ürün alt-satırı) HARİÇ; kâr masrafı da düşer.
+    const sfF = " AND sf.STOKTIPI NOT IN (12,13,14) AND ISNULL(sf.DETAY,0)=0";
     const result = await request.query(`
       SELECT TOP 500 STOKNO,
              MAX(MALINCINSI) malincinsi, MAX(STOKKODU) stokkodu,
              SUM(MIKTAR) miktar,
              CAST(SUM(GERCEKTOPLAM) AS DECIMAL(18,2)) satis,
              CAST(SUM(ISNULL(AFIYATI,0)*MIKTAR) AS DECIMAL(18,2)) maliyet,
-             CAST(SUM(GERCEKTOPLAM - ISNULL(AFIYATI,0)*MIKTAR) AS DECIMAL(18,2)) kar,
+             CAST(SUM(ISNULL(MASRAF,0)) AS DECIMAL(18,2)) masraf,
+             CAST(SUM(GERCEKTOPLAM - ISNULL(AFIYATI,0)*MIKTAR - ISNULL(MASRAF,0)) AS DECIMAL(18,2)) kar,
              CASE WHEN SUM(MIKTAR)<>0 THEN CAST(SUM(ISNULL(AFIYATI,0)*MIKTAR)/SUM(MIKTAR) AS DECIMAL(18,2)) ELSE 0 END birimMaliyet
-      FROM [${T.satFat}] sf WHERE 1=1 ${dateF} ${searchF}
+      FROM [${T.satFat}] sf WHERE 1=1 ${dateF} ${searchF}${sfF}
       GROUP BY STOKNO ORDER BY SUM(GERCEKTOPLAM) DESC`);
 
     // Özet TÜM satırlar üzerinden (tabloda yalnız TOP 500 gösterilir; özet
@@ -919,15 +956,18 @@ app.get("/api/satis-karlilik", async (req, res) => {
     const oz = (await req2.query(`
       SELECT CAST(SUM(GERCEKTOPLAM) AS DECIMAL(18,2)) satis,
              CAST(SUM(ISNULL(AFIYATI,0)*MIKTAR) AS DECIMAL(18,2)) maliyet,
-             CAST(SUM(GERCEKTOPLAM - ISNULL(AFIYATI,0)*MIKTAR) AS DECIMAL(18,2)) kar,
+             CAST(SUM(ISNULL(MASRAF,0)) AS DECIMAL(18,2)) masraf,
+             CAST(SUM(GERCEKTOPLAM - ISNULL(AFIYATI,0)*MIKTAR - ISNULL(MASRAF,0)) AS DECIMAL(18,2)) kar,
              COUNT(DISTINCT STOKNO) kalemSayisi
-      FROM [${T.satFat}] sf WHERE 1=1 ${dateF} ${searchF}`)).recordset[0];
+      FROM [${T.satFat}] sf WHERE 1=1 ${dateF} ${searchF}${sfF}`)).recordset[0];
     const ozet = {
-      satis: Number(oz.satis) || 0, maliyet: Number(oz.maliyet) || 0, kar: Number(oz.kar) || 0,
+      satis: Number(oz.satis) || 0, maliyet: Number(oz.maliyet) || 0,
+      masraf: Number(oz.masraf) || 0, kar: Number(oz.kar) || 0,
       kalemSayisi: oz.kalemSayisi || 0, gosterilen: result.recordset.length,
       maliyetKaynak: "AFIYATI", // maliyet satış satırı alış fiyatından
     };
-    ozet.marj = ozet.satis ? (ozet.kar / ozet.satis) * 100 : 0;
+    ozet.marj = ozet.satis ? (ozet.kar / ozet.satis) * 100 : 0;        // satış tabanlı marj
+    ozet.karOrani = ozet.maliyet ? (ozet.kar / ozet.maliyet) * 100 : 0; // maliyet tabanlı (Arctos KAR)
 
     res.json({ success: true, data: result.recordset, ozet });
   } catch (err) {
@@ -947,27 +987,33 @@ app.get("/api/home", async (req, res) => {
       kasaNet: 0, kasaKirilim: [],                              // GERÇEK NAKİT (kasa)
       bankaToplam: {}, bankaNakit: {}, bankaKredi: {}, bankaDoviz: {}, hesapSayisi: 0,
       cekSayisi: 0, cekCikisSayisi: 0, senetSayisi: 0, senetCikisSayisi: 0,
+      // Çek/senet TUTAR toplamları (VARES portföy view'larından; ALINAN=varlık, VERILEN=borç)
+      cekAlinanTutar: 0, cekVerilenTutar: 0, senetAlinanTutar: 0, senetVerilenTutar: 0,
       tahsilatSayisi: 0, tahsilatToplam: 0,
     };
 
-    // ─── GERÇEK NAKİT: Kasa (TBLKASA) net = SUM((GELIR-GIDER)×KUR), devir dahil ──
-    // Toplam Nakit artık BANKADAN değil kasadan gelir (kullanıcı düzeltmesi).
+    // ─── GERÇEK NAKİT: Kasa "Toplam Kasa Bakiyesi" — Arctos formülü ──
+    // Devir dahil, ISLEMTIPI=1 (yalnız nakit), KREDIKASA hariç, (GELIR-GIDER)/KUR.
     if (await validateTableName(T.kasa)) {
+      const hasTB = await validateTableName(T.tahsilBaslik);
+      const nakitWhere = kasaNakitWhere(T.tahsilBaslik, hasTB);
       const k = await pool.request().query(`
-        SELECT ISNULL(NULLIF(LTRIM(RTRIM(KASAADI)),''),'(Tanımsız)') kasa,
-               ISNULL(SUM((GELIR-GIDER)*${KURX}),0) net
-        FROM [${T.kasa}] GROUP BY KASAADI ORDER BY SUM((GELIR-GIDER)*${KURX}) DESC`);
+        SELECT ISNULL(NULLIF(LTRIM(RTRIM(K.KASAADI)),''),'(Tanımsız)') kasa,
+               ISNULL(SUM(${KASA_NAKIT_VAL}),0) net
+        FROM [${T.kasa}] K WHERE ${nakitWhere}
+        GROUP BY K.KASAADI ORDER BY SUM(${KASA_NAKIT_VAL}) DESC`);
       out.kasaKirilim = k.recordset;
       out.kasaNet = k.recordset.reduce((s, r) => s + (r.net || 0), 0);
     }
 
     if (await validateTableName(T.bankalar) && await validateTableName(T.bankaHareket)) {
-      // Hesap bazında net hareket → TL nakit/kredi + döviz kasaları ayrı
+      // Hesap bazında net hareket → TL nakit/kredi + döviz kasaları ayrı.
+      // Arctos ile birebir: MUSBANKA=0 (müşteri bankası hariç), STATUS<>2, (BORC-ALACAK)/KUR.
       const b = await pool.request().query(`
         SELECT b.ADI, b.PARABIRIMI, ISNULL(h.bakiye,0) bakiye, ISNULL(h.hareket,0) hareket
         FROM [${T.bankalar}] b
-        LEFT JOIN (SELECT BANKANO, SUM(BORC-ALACAK) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND
-        WHERE ISNULL(b.STATUS,1)=1 AND ISNULL(h.hareket,0) > 0`);
+        LEFT JOIN (SELECT BANKANO, SUM((BORC-ALACAK)/${KURX}) bakiye, COUNT(*) hareket FROM [${T.bankaHareket}] GROUP BY BANKANO) h ON h.BANKANO=b.IND
+        WHERE ISNULL(b.MUSBANKA,0)=0 AND (b.STATUS<>2 OR b.STATUS IS NULL) AND ISNULL(h.hareket,0) > 0`);
       b.recordset.forEach(r => {
         if (r.hareket > 0 || r.bakiye !== 0) out.hesapSayisi++;
         const dov = detectDoviz(r.ADI, r.PARABIRIMI);
@@ -981,6 +1027,16 @@ app.get("/api/home", async (req, res) => {
     if (await validateTableName(T.cekCikis)) out.cekCikisSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.cekCikis}]`)).recordset[0].n;
     if (await validateTableName(T.senetGiris)) out.senetSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.senetGiris}]`)).recordset[0].n;
     if (await validateTableName(T.senetCikis)) out.senetCikisSayisi = (await pool.request().query(`SELECT COUNT(*) n FROM [${T.senetCikis}]`)).recordset[0].n;
+    // Çek/senet TUTAR toplamları — Arctos portföy VIEW'larından SUM(TUTAR)
+    // (VARES* birer view olduğu için includeViews=true şart)
+    const sumTutar = async (tbl) =>
+      (await validateTableName(tbl, true))
+        ? (await pool.request().query(`SELECT ISNULL(SUM(TUTAR),0) t FROM [${tbl}]`)).recordset[0].t
+        : 0;
+    out.cekAlinanTutar = await sumTutar(T.cekAlinan);
+    out.cekVerilenTutar = await sumTutar(T.cekVerilen);
+    out.senetAlinanTutar = await sumTutar(T.senetAlinan);
+    out.senetVerilenTutar = await sumTutar(T.senetVerilen);
     if (await validateTableName(T.cariHareket)) {
       const v = (await pool.request().query(`SELECT COUNT(*) n, ISNULL(SUM(ALACAK),0) t FROM [${T.cariHareket}] WHERE IZAHAT=${IZ.TAHSILAT}`)).recordset[0];
       out.tahsilatSayisi = v.n; out.tahsilatToplam = v.t;

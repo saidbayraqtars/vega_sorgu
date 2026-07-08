@@ -50,7 +50,7 @@ export default function SatisKarlilik() {
         <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-cyan-600/20 to-blue-800/20 p-5"><p className="text-xs text-dark-300 uppercase">Toplam Satış</p><p className="text-2xl font-bold text-cyan-400 mt-2">{formatTL(o.satis || 0)}</p></div>
         <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-rose-600/20 to-red-800/20 p-5"><p className="text-xs text-dark-300 uppercase">Toplam Maliyet</p><p className="text-2xl font-bold text-rose-400 mt-2">{formatTL(o.maliyet || 0)}</p></div>
         <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-emerald-600/20 to-green-800/20 p-5"><p className="text-xs text-dark-300 uppercase">Toplam Karlılık</p><p className="text-2xl font-bold text-emerald-400 mt-2">{formatTL(o.kar || 0)}</p></div>
-        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-violet-600/20 to-purple-800/20 p-5"><p className="text-xs text-dark-300 uppercase">Ort. Kâr Marjı</p><p className="text-2xl font-bold text-violet-400 mt-2">%{formatNumber(o.marj || 0)}</p></div>
+        <div className="rounded-2xl border border-white/10 bg-gradient-to-br from-violet-600/20 to-purple-800/20 p-5"><p className="text-xs text-dark-300 uppercase">Ort. Kâr Marjı</p><p className="text-2xl font-bold text-violet-400 mt-2">%{formatNumber(o.marj || 0)}</p><p className="text-[11px] text-dark-400 mt-1">Maliyet üzeri %{formatNumber(o.karOrani || 0)}{o.masraf ? ` · Masraf ${formatTL(o.masraf)}` : ""}</p></div>
       </div>
 
       <div className="glass-card overflow-hidden">
