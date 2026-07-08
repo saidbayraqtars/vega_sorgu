@@ -104,6 +104,7 @@ export default function CariKartlar() {
   const { selectedFirma, selectedDonem } = useConnection();
   const [search, setSearch] = useState("");
   const [bakiye, setBakiye] = useState("");
+  const [bakiyeli, setBakiyeli] = useState(false);
   const [sort, setSort] = useState("ad");
   const [page, setPage] = useState(1);
   const [res, setRes] = useState({ data: [], total: 0, pageCount: 0 });
@@ -111,17 +112,17 @@ export default function CariKartlar() {
   const [error, setError] = useState(null);
   const [detayInd, setDetayInd] = useState(null);
 
-  useEffect(() => { setPage(1); }, [search, selectedFirma, bakiye, sort]);
+  useEffect(() => { setPage(1); }, [search, selectedFirma, bakiye, bakiyeli, sort]);
 
   useEffect(() => {
     let on = true;
     setLoading(true); setError(null);
-    apiGet("/cari/list", { firmaNo: selectedFirma, search, page, bakiye, sort })
+    apiGet("/cari/list", { firmaNo: selectedFirma, search, page, bakiye, sort, bakiyeli: bakiyeli ? "1" : "" })
       .then(r => { if (on) setRes(r); })
       .catch(e => { if (on) setError(e.message); })
       .finally(() => { if (on) setLoading(false); });
     return () => { on = false; };
-  }, [selectedFirma, search, page, bakiye, sort]);
+  }, [selectedFirma, search, page, bakiye, bakiyeli, sort]);
 
   return (
     <div className="p-8 space-y-6">
@@ -146,6 +147,11 @@ export default function CariKartlar() {
             className="px-3 py-2 rounded-lg bg-dark-800 border border-white/10 text-dark-200 text-xs focus:outline-none focus:border-violet-500/50">
             {SIRALAMALAR.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
           </select>
+          <label className="flex items-center gap-2 px-3 py-2 rounded-lg bg-dark-800 border border-white/10 text-dark-200 text-xs cursor-pointer select-none hover:bg-dark-700">
+            <input type="checkbox" checked={bakiyeli} onChange={e => setBakiyeli(e.target.checked)}
+              className="w-4 h-4 rounded accent-violet-600" />
+            Sadece bakiyesi olanlar
+          </label>
         </div>
 
         {error && <p className="text-red-400 text-sm mt-3">{error}</p>}

@@ -1,6 +1,6 @@
 {
   "name": "vega-sorgu-desktop",
-  "version": "1.1.4",
+  "version": "1.1.5",
   "description": "Vega Sorgu — Arctos/Vega ERP finansal raporlama masaüstü uygulaması (Electron, otomatik güncellemeli).",
   "main": "electron/main.js",
   "author": "Said Bayraktar",

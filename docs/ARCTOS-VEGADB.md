@@ -1,4 +1,4 @@
-# Arctos / Vega ERP — VegaDB Teknik Rehber
+2# Arctos / Vega ERP — VegaDB Teknik Rehber
 
 > Bu belge, **Arctos (Vega ERP)** masaüstü uygulamasının kullandığı **VegaDB** (MSSQL)
 > veritabanının, Vega Sorgu uygulamasını Arctos ile **birebir tutarlı** hale getirmek

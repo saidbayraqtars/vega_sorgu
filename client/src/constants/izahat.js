@@ -12,7 +12,7 @@
 // Eski "21-24=Çek/Senet, 13/14=Visa" haritası YANLIŞTI — çek/senet kendi
 // tablolarında (TBLCEK*/TBLSENET*), tutar/vade bordro hareketinde.
 export const IZAHAT_MAP = {
-  11: { label: "Tediye (Cari Çıkış Bordrosu)", group: "Giden (Borç)", isDevir: false },
+  11: { label: "Ödeme (Cari Çıkış Bordrosu)", group: "Giden (Borç)", isDevir: false },
   12: { label: "Cari Çıkış İade Bordrosu", group: "Diğer", isDevir: false },
   13: { label: "Tahsilat (Cari Giriş Bordrosu)", group: "Gelen (Alacak)", isDevir: false },
   16: { label: "Çek Ödeme", group: "Giden (Borç)", isDevir: false },
@@ -25,7 +25,7 @@ export const IZAHAT_MAP = {
   32: { label: "Stok Giriş Fişi", group: "Gelen (Alacak)", isDevir: false },
   33: { label: "Stok Çıkış Fişi", group: "Giden (Borç)", isDevir: false },
   83: { label: "Havale (Banka Tahsilat)", group: "Gelen (Alacak)", isDevir: false },
-  84: { label: "Banka Tediye", group: "Giden (Borç)", isDevir: false },
+  84: { label: "Banka Ödeme", group: "Giden (Borç)", isDevir: false },
   103: { label: "Cari Devir (Alacak)", group: "Devir (Alacak)", isDevir: true },
   104: { label: "Cari Devir (Borç)", group: "Devir (Borç)", isDevir: true },
 };
@@ -42,7 +42,7 @@ export const BANKA_IZAHAT_MAP = {
   72: "Banka Giriş",
   73: "Banka Çıkış",
   83: "Havale (Tahsilat)",
-  84: "Banka Tediye",
+  84: "Banka Ödeme",
   113: "Banka Devir (Borç)",
   114: "Banka Devir (Alacak)",
 };

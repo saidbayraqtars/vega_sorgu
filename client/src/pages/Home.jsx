@@ -10,7 +10,7 @@ const MODULES = [
   { id: "bankaHareket", title: "Banka Hareketleri", desc: "Gelir ve gider hareketleri", grad: "from-violet-600/20 to-purple-800/20", clr: "text-violet-400" },
   { id: "cek", title: "Çek Raporları", desc: "Alınan ve verilen çekler", grad: "from-rose-600/20 to-red-800/20", clr: "text-rose-400" },
   { id: "satis", title: "Satış Karlılık", desc: "Stok bazlı kâr analizi", grad: "from-pink-600/20 to-fuchsia-800/20", clr: "text-pink-400" },
-  { id: "tahsilat", title: "Tahsilat Raporları", desc: "Cari tahsilat ve tediyeler", grad: "from-indigo-600/20 to-blue-800/20", clr: "text-indigo-400" },
+  { id: "tahsilat", title: "Tahsilat Raporları", desc: "Cari tahsilat ve ödemeler", grad: "from-indigo-600/20 to-blue-800/20", clr: "text-indigo-400" },
 ];
 
 function StatCard({ title, value, sub, clr, grad, onClick }) {

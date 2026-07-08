@@ -331,9 +331,13 @@ const IZ = {
 // NOT: Eski [13,14]=Visa, [21,22,23,24]=Çek/Senet haritası YANLIŞTI. Çek/senet
 // kendi tablolarında (TBLCEK*/TBLSENET*). 14 ve 24 bu DB'de hiç yok.
 
-// Cari hareket izleme kodları (ciro+tahsilat+alış+tediye+iade+devir)
+// Cari hareket izleme kodları (ciro+tahsilat+ödeme+alış+iade+devir)
 const CARI_KODLAR = [11, 13, 20, 21, 22, 23, 103, 104];
 const DEVIR_KODLAR = [103, 104];                          // yıl başı açılış (ciroya dahil değil)
+
+// Verilen çek VARES view VCEKISLEM değeri: "Ödenecek" = henüz ödenmemiş (canlı
+// doğrulandı F0101; diğerleri: 'Çek Ödenmiş', 'Bankadan Ödenmiş Çek', 'Çek İade').
+const CEK_ODENECEK = "Ödenecek";
 
 // ═══════════════════════════════════════════════════════════════
 // ENDPOINT: Günlük Özet (Cari Hareket + Kasa Nakit)
@@ -566,6 +570,18 @@ function tableNames(firmaNo, donemNo) {
   };
 }
 
+// Cari tablosu kolon keşfi (STATUS=aktif/pasif gibi opsiyonel kolonlar için).
+// STATUS: 1=aktif, 2=pasif (Vega standart). Firma bazında cache — her istekte sorgu atmaz.
+const _cariColsCache = {};
+async function cariColumns(firmaNo) {
+  if (_cariColsCache[firmaNo]) return _cariColsCache[firmaNo];
+  const rs = await pool.request().input("t", sql.NVarChar, `F${firmaNo}TBLCARI`)
+    .query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@t`);
+  const set = new Set(rs.recordset.map(c => c.COLUMN_NAME.toUpperCase()));
+  _cariColsCache[firmaNo] = set;
+  return set;
+}
+
 // ─── Döviz hesabı tespiti ────────────────────────────────────
 // Bu DB'de tüm banka/kasa PARABIRIMI='TL' ve KUR≈1 kaydedilmiş; döviz kasaları
 // yalnızca hesap ADINDA belli (İÇ KASA EURO/DOLAR/STERLİN/FRANK, HALKBANK-STERLİN).
@@ -609,7 +625,7 @@ function kasaNakitWhere(tahsilBaslikTable, hasTahsilBaslik) {
 // sort: ad | bakiyeDesc | bakiyeAsc
 app.get("/api/cari/list", async (req, res) => {
   if (!requireConnection(req, res)) return;
-  const { firmaNo, search = "", page = "1", bakiye = "", sort = "" } = req.query;
+  const { firmaNo, search = "", page = "1", bakiye = "", sort = "", bakiyeli = "" } = req.query;
   if (!firmaNo) return res.status(400).json({ success: false, message: "firmaNo gerekli." });
 
   const T = tableNames(firmaNo, "0000");
@@ -620,8 +636,11 @@ app.get("/api/cari/list", async (req, res) => {
   const offset = (pageNum - 1) * pageSize;
 
   try {
+    const cols = await cariColumns(firmaNo);
     const request = pool.request();
     let where = `WHERE ISNULL(DELETED,0)=0`;
+    // Pasif cari (STATUS=2) hiç listelenmez — kullanıcı isteği.
+    if (cols.has("STATUS")) where += ` AND ISNULL(STATUS,1)<>2`;
     if (search.trim()) {
       request.input("s", sql.NVarChar, `%${search.trim()}%`);
       where += ` AND (FIRMAADI LIKE @s OR UNVAN LIKE @s OR FIRMAKODU LIKE @s OR CAST(IND AS VARCHAR) LIKE @s)`;
@@ -629,6 +648,8 @@ app.get("/api/cari/list", async (req, res) => {
     if (bakiye === "borclu") where += ` AND ISNULL(BAKIYE,0) > 0.009`;
     else if (bakiye === "alacakli") where += ` AND ISNULL(BAKIYE,0) < -0.009`;
     else if (bakiye === "bakiyesiz") where += ` AND ABS(ISNULL(BAKIYE,0)) <= 0.009`;
+    // "Sadece bakiyesi olanlar" tiki — bakiyesiz carileri ele.
+    if (bakiyeli === "1") where += ` AND ABS(ISNULL(BAKIYE,0)) > 0.009`;
     const ORDERS = { ad: "FIRMAADI", bakiyeDesc: "ISNULL(BAKIYE,0) DESC, FIRMAADI", bakiyeAsc: "ISNULL(BAKIYE,0) ASC, FIRMAADI" };
     const orderBy = ORDERS[sort] || ORDERS.ad;
 
@@ -770,7 +791,7 @@ app.get("/api/banka/hareket", async (req, res) => {
       FROM [${T.bankaHareket}] h
       LEFT JOIN [${T.bankalar}] b ON b.IND=h.BANKANO
       ${where}
-      ORDER BY h.TARIH, h.IND
+      ORDER BY h.TARIH DESC, h.IND DESC
       OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY`);
 
     res.json({
@@ -799,18 +820,43 @@ app.get("/api/cek", async (req, res) => {
   const { firmaNo, donemNo, yon = "giris" } = req.query;
   if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
   const T = tableNames(firmaNo, donemNo);
-  const tbl = yon === "cikis" ? T.cekCikis : T.cekGiris;
-  const cari = T.cari;
-  if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0, toplam: 0, yon });
+  const isVer = yon === "cikis";
   try {
+    // Ana kaynak: Arctos VARES portföy view'ı — tutar + tahsil/ödeme durumu içerir.
+    // Kolon adları yöne göre değişir (canlı doğrulandı F0101):
+    //   Alınan (VARESALINANCEKLER): KESIDEEDEN, BANKASUBE, TAHSILDURUMU, KESIDEYERI, TAKIPNO
+    //   Verilen (VARESVERILENCEKLER): KESIDEEDENFIRMAADI, SUBE, VCEKISLEM (KESIDEYERI/TAKIPNO yok)
+    const view = isVer ? T.cekVerilen : T.cekAlinan;
+    if (await validateTableName(view, true)) {
+      const kesideci = isVer ? "KESIDEEDENFIRMAADI" : "KESIDEEDEN";
+      const sube = isVer ? "SUBE" : "BANKASUBE";
+      const durumCol = isVer ? "VCEKISLEM" : "TAHSILDURUMU";
+      const kesideYeri = isVer ? "NULL" : "KESIDEYERI";
+      const takip = isVer ? "NULL" : "TAKIPNO";
+      // Verilen çekte yalnızca ödenecek (ödenmemiş) olanlar — kullanıcı isteği.
+      const odenecekWhere = isVer ? `WHERE VCEKISLEM = N'${CEK_ODENECEK}'` : "";
+      const result = await pool.request().query(`
+        SELECT TOP 2000 IND, BELGENO, ${kesideci} AS KESIDEEDEN, ${kesideYeri} AS KESIDEYERI,
+               ${sube} AS SUBE, KESIDETARIHI, BANKAHESAPNO, ${takip} AS TAKIPNO,
+               CAST(ISNULL(TUTAR,0) AS DECIMAL(18,2)) AS TUTAR, VADE, ${durumCol} AS DURUM,
+               FIRMAADI AS cariUnvan, BANKAADI AS bankaAdi
+        FROM [${view}]
+        ${odenecekWhere}
+        ORDER BY ISNULL(VADE, KESIDETARIHI) DESC`);
+      const toplam = result.recordset.reduce((s, r) => s + (Number(r.TUTAR) || 0), 0);
+      return res.json({ success: true, data: result.recordset, count: result.recordset.length, toplam, yon });
+    }
+
+    // ─── FALLBACK: view yoksa eski yol (TBLCEK* + bordro; durum yok) ───
+    const tbl = isVer ? T.cekCikis : T.cekGiris;
+    const cari = T.cari;
+    if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0, toplam: 0, yon });
     const banka = T.bankalar;
     const hasBanka = await validateTableName(banka);
-    // TAKIPNO CEKGIRIS'te var, CEKCIKIS'te YOK → kolonları dinamik seç
     const colRs = await pool.request().input("t", sql.NVarChar, tbl)
       .query(`SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME=@t`);
     const have = new Set(colRs.recordset.map(c => c.COLUMN_NAME.toUpperCase()));
     const takipCol = have.has("TAKIPNO") ? "ck.TAKIPNO" : "NULL AS TAKIPNO";
-    // Tutar + vade bordro satırından (IZAHAT=2=çek, BELGELINK=çek IND)
     const B = bordroTables(firmaNo, donemNo, yon);
     const hasBordro = await validateTableName(B.hareket);
     const bordroApply = hasBordro ? `
@@ -821,6 +867,7 @@ app.get("/api/cek", async (req, res) => {
       SELECT TOP 1000 ck.IND, ck.BELGENO, ck.KESIDEEDEN, ck.KESIDEYERI, ck.SUBE, ck.KESIDETARIHI,
              ck.BANKAHESAPNO, ck.EVRAKNO, ${takipCol}, ck.FIRMANO,
              ${hasBordro ? "CAST(hr.TUTAR AS DECIMAL(18,2)) AS TUTAR, hr.VADE" : "NULL AS TUTAR, NULL AS VADE"},
+             NULL AS DURUM,
              COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan,
              ${hasBanka ? "b.ADI" : "NULL"} AS bankaAdi
       FROM [${tbl}] ck
@@ -841,11 +888,28 @@ app.get("/api/senet", async (req, res) => {
   const { firmaNo, donemNo, yon = "giris" } = req.query;
   if (!firmaNo || !donemNo) return res.status(400).json({ success: false, message: "firmaNo ve donemNo gerekli." });
   const T = tableNames(firmaNo, donemNo);
-  const tbl = yon === "cikis" ? T.senetCikis : T.senetGiris;
+  const isVer = yon === "cikis";
   const cari = T.cari;
   try {
-    // Asıl kaynak: bordro satırları (IZAHAT=3=senet). TBLSENET* satırlarında
-    // TUTAR/KESIDETARIHI bu DB'de boş; TUTAR ve VADE bordro hareketinde.
+    // Ana kaynak: Arctos VARES senet portföy view'ı — tutar + durum içerir.
+    // Kolon adları yöne göre değişir (canlı doğrulandı F0101):
+    //   Alınan (VARESALINANSENETLER): KESIDEEDEN, TAHSILDURUMU
+    //   Verilen (VARESVERILENSENETLER): SENETVRENEFIRMAADI, VSENETISLEM
+    const view = isVer ? T.senetVerilen : T.senetAlinan;
+    if (await validateTableName(view, true)) {
+      const kesideci = isVer ? "SENETVRENEFIRMAADI" : "KESIDEEDEN";
+      const durumCol = isVer ? "VSENETISLEM" : "TAHSILDURUMU";
+      const result = await pool.request().query(`
+        SELECT TOP 2000 BELGENO, CAST(ISNULL(TUTAR,0) AS DECIMAL(18,2)) AS TUTAR, VADE, TARIH,
+               ${kesideci} AS KESIDEEDEN, ${durumCol} AS DURUM, FIRMAADI AS cariUnvan
+        FROM [${view}]
+        ORDER BY ISNULL(VADE, TARIH) DESC`);
+      const toplam = result.recordset.reduce((s, r) => s + (Number(r.TUTAR) || 0), 0);
+      return res.json({ success: true, data: result.recordset, count: result.recordset.length, toplam, yon });
+    }
+
+    // ─── FALLBACK: view yoksa bordro satırları (IZAHAT=3=senet; durum yok) ───
+    const tbl = isVer ? T.senetCikis : T.senetGiris;
     const B = bordroTables(firmaNo, donemNo, yon);
     if (await validateTableName(B.hareket)) {
       const hasBaslik = await validateTableName(B.baslik);
@@ -854,6 +918,7 @@ app.get("/api/senet", async (req, res) => {
         SELECT TOP 1000 hr.BELGENO, CAST(ISNULL(hr.TUTAR,0) AS DECIMAL(18,2)) AS TUTAR, hr.VADE,
                ${hasBaslik ? "bs.TARIH" : "NULL AS TARIH"},
                ${hasSn ? "sn.KESIDEEDEN, sn.VERGIDAIRESI, sn.VERGINO, sn.KESIDETARIHI" : "NULL AS KESIDEEDEN, NULL AS VERGIDAIRESI, NULL AS VERGINO, NULL AS KESIDETARIHI"},
+               NULL AS DURUM,
                hr.FIRMANO, COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan
         FROM [${B.hareket}] hr
         LEFT JOIN [${cari}] c ON c.IND = hr.FIRMANO
@@ -864,11 +929,11 @@ app.get("/api/senet", async (req, res) => {
       const toplam = result.recordset.reduce((s, r) => s + (Number(r.TUTAR) || 0), 0);
       return res.json({ success: true, data: result.recordset, count: result.recordset.length, toplam, yon });
     }
-    // Bordro tablosu yoksa eski yol: doğrudan senet tablosu
     if (!(await validateTableName(tbl))) return res.json({ success: true, data: [], count: 0, toplam: 0, yon });
     const result = await pool.request().query(`
       SELECT TOP 1000 sn.BELGENO, sn.KESIDEEDEN, sn.KESIDETARIHI, sn.VERGIDAIRESI, sn.VERGINO,
              ISNULL(sn.TUTAR,0) AS TUTAR, NULL AS VADE, sn.KESIDETARIHI AS TARIH,
+             NULL AS DURUM,
              sn.FIRMANO, COALESCE(NULLIF(c.UNVAN,''), c.FIRMAADI) AS cariUnvan
       FROM [${tbl}] sn
       LEFT JOIN [${cari}] c ON c.IND = sn.FIRMANO
