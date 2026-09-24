@@ -5,7 +5,7 @@
 //   node src/cli.js firma-ekle <kod> "<ad>" <yonetici> <sifre>
 //   node src/cli.js kopru-anahtari <firma-kodu>       → yeni köprü anahtarı
 //   node src/cli.js sifre <kullanici> <yeni-sifre>
-//   node src/cli.js yedek                             → data/yedek/<zaman>/ altına tüm veritabanları
+//   node src/cli.js yedek [--sakla 7]                 → data/yedek/<zaman>/ altına tüm veritabanları (son N yedek tutulur)
 
 const fs = require("fs");
 const path = require("path");
@@ -76,6 +76,12 @@ async function main() {
         await backup(registry.db.raw, path.join(dir, "registry.db"));
         for (const t of registry.tenants()) await backup(tenants.get(t).db.raw, path.join(dir, "tenants", `${t.slug}.db`));
         console.log(`Yedek alındı: ${dir}`);
+        const i = args.indexOf("--sakla");
+        const sakla = i >= 0 ? Math.max(1, Number(args[i + 1]) || 7) : 7;
+        const kok = path.join(config.dataDir, "yedek");
+        const eski = fs.readdirSync(kok).filter((d) => /^\d{4}-\d{2}-\d{2}T/.test(d)).sort().slice(0, -sakla);
+        for (const d of eski) fs.rmSync(path.join(kok, d), { recursive: true, force: true });
+        if (eski.length) console.log(`${eski.length} eski yedek silindi (son ${sakla} tutuluyor).`);
         break;
       }
       default:

@@ -1,0 +1,26 @@
+# Vega Bulut — HTTPS ters vekil. Sertifika Let's Encrypt'ten otomatik alınır/yenilenir.
+# ALAN_ADI'nın DNS A kaydı bu sunucuyu göstermeli; 80 ve 443 portları açık olmalı.
+{
+	email {$EPOSTA}
+}
+
+{$ALAN_ADI} {
+	encode zstd gzip
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		-Server
+	}
+
+	# Köprü büyük gzip gövdeler gönderebilir (uygulama sınırı KOPRU_MAX_MB, varsayılan 64)
+	request_body /api/kopru/* {
+		max_size 80MB
+	}
+
+	reverse_proxy {$UPSTREAM:vega:8080} {
+		transport http {
+			read_timeout 5m
+			write_timeout 5m
+		}
+	}
+}

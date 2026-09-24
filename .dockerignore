@@ -1,0 +1,20 @@
+# Vega Bulut imajına girmeyecekler (deploy/Dockerfile, bağlam: depo kökü)
+.git
+**/node_modules
+**/*.db
+**/*.db-wal
+**/*.db-shm
+**/*.log
+VegaSorgu.exe
+VegaSorgu.rar
+dist
+client
+server
+electron
+bridge
+görseller
+docs
+cloud/data
+cloud/test
+web/dist
+deploy/.env

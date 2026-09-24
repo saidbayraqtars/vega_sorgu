@@ -1,0 +1,37 @@
+# Vega Bulut — Docker'sız kurulum için systemd birimi (bkz. docs/KURULUM.md, "Docker'sız").
+#   sudo cp deploy/vega-bulut.service /etc/systemd/system/ && sudo systemctl enable --now vega-bulut
+[Unit]
+Description=Vega Bulut (Arctos/Vega analiz ve raporlama sunucusu)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vega
+Group=vega
+WorkingDirectory=/opt/vega/cloud
+EnvironmentFile=/etc/vega-bulut.env
+Environment=NODE_ENV=production
+Environment=DATA_DIR=/var/lib/vega
+Environment=HOST=127.0.0.1
+Environment=PORT=8080
+ExecStart=/usr/bin/node --disable-warning=ExperimentalWarning src/index.js
+Restart=always
+RestartSec=5
+
+# Sıkılaştırma
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/vega
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target

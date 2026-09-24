@@ -1,72 +1,62 @@
-# Arctos / Vega ERP — Dashboard
+# Vega — Arctos/Vega ERP için bulut finans paneli
 
-SQL Server (Arctos/Vega ERP) veritabanına bağlanan, firma + dönem tablolarını dinamik keşfeden ve günlük nakit / visa / çek-senet hareketlerini gösteren localhost dashboard uygulaması.
+Müşterinin sunucusundaki Arctos/Vega (VEGADB) verisini **köprü** ile 15 dakikada bir kendi VPS'inize
+taşır; şirketin **büyüme yüzdesini**, **finansal sağlık skorunu**, **anlık finansal durumunu**, 90 günlük
+**nakit projeksiyonunu** ve **1.085 raporu** sade, simgelerle anlatan bir panelde gösterir.
 
-## Akış
-
-1. **Kurulum** — SQL Server bilgileri + 6 haneli PIN girilir; bilgiler şifrelenip `config.json`'a kaydedilir.
-2. **PIN Girişi** — Sonraki açılışlarda yalnızca PIN ile bağlanılır.
-3. **Firma & Dönem Seçimi** — `TBLFIRMA` / `TBLDONEM` üzerinden okunur.
-4. **Dashboard** — Seçilen `F{firma}D{dönem}` tablolarından özet kartları ve işlem detayları gösterilir.
-
-## Kurulum
-
-### Backend
-```bash
-cd server
-npm install
-npm run dev      # http://localhost:3001
+```
+Müşteri SQL Server ──(Vega Köprü, salt-okunur, yalnız dışarı HTTPS)──► VPS: Vega Bulut ──► Panel (tarayıcı)
 ```
 
-### Frontend (geliştirme)
+| | |
+|---|---|
+| **Büyüme Endeksi** | Net ciro %40 · brüt kâr %30 · tahsilat %20 · aktif müşteri %10; yıllık karşılaştırma, enflasyondan arındırılmış reel büyüme, ivme, 3 aylık tahmin, yıl sonu tahmini |
+| **Finansal Sağlık Skoru** | 0–100, A–E: likidite · kârlılık · büyüme · tahsilat & döngü · risk; "neden bu skor?" açıklamalarıyla |
+| **Anlık durum** | Kasa, banka, döviz, alacak/borç, çek/senet, stok; operasyonel bilanço, cari/asit-test oranları, DSO/DPO/DIO |
+| **Nakit projeksiyonu** | Vade takvimi (kesin) + olağan akış (mevsim düzeltmeli) — "nakit ne zaman sıkışır?" |
+| **Uyarılar** | 20+ açıklanabilir kural: nakit açığı, vadesi geçen çek, tahsilat gerilemesi, marj düşüşü… |
+| **Raporlar** | 35 ölçü × 16 boyut × 11 görünüm + 46 özel analiz; her biri özelleştirilebilir panolara eklenir |
+
+## Dizinler
+
+| Dizin | İçerik |
+|---|---|
+| [`cloud/`](cloud/) | **Vega Bulut** — VPS sunucusu: alım API'si, analiz motoru, rapor kataloğu, panel API'si |
+| [`bridge/`](bridge/) | **Vega Köprü** çekirdeği — SQL keşfi, çıkarım, artımlı eşitleme, komut satırı |
+| [`electron/`](electron/) | Köprünün Windows tepsi uygulaması (eski "Vega Sorgu" masaüstü uygulamasının yerini alır) |
+| `web/` | Panel arayüzü (React, ayrı geliştirilir) — görev tanımı: [docs/ARAYUZ-PROMPT.md](docs/ARAYUZ-PROMPT.md) |
+| [`shared/`](shared/) | Köprü ↔ bulut veri sözleşmesi |
+| [`deploy/`](deploy/) | Docker + Caddy (otomatik HTTPS), systemd, yedekleme |
+| [`docs/`](docs/) | Belgeler |
+
+## Hızlı başlangıç (demo)
+
 ```bash
-cd client
-npm install
-npm run dev      # http://localhost:5173
+cd cloud && npm install
+npm run demo      # demo firması + örnek veri
+npm start         # http://localhost:8080 → demo / demo123 · admin / admin123
+npm test          # 44 test: motor Arctos formüllerine karşı, 1.085 raporun tamamı, HTTP uçları
 ```
 
-### Tek dosya (exe) derleme
-`build.bat` çalıştırılır: client build → `server/public` → `pkg` ile `VegaSorgu.exe`.
+Canlı kurulum: **[docs/KURULUM.md](docs/KURULUM.md)** (VPS'te `docker compose up -d --build`).
 
-## API Endpoints
+## Belgeler
 
-| Method | Endpoint | Açıklama |
-|--------|----------|----------|
-| GET  | `/api/check-setup` | Kurulu mu? |
-| POST | `/api/setup` | İlk kurulum (DB + PIN) |
-| POST | `/api/login` | PIN ile bağlan |
-| POST | `/api/reset` | Ayarları sıfırla |
-| GET  | `/api/status` | Bağlantı durumu |
-| POST | `/api/disconnect` | Bağlantıyı kes |
-| GET  | `/api/summary?firmaNo=&donemNo=&startDate=&endDate=[&allTime=true]` | Günlük özet (cari + kasa nakit) |
-| GET  | `/api/details?firmaNo=&donemNo=&type=&startDate=&endDate=[&allTime=true]` | İşlem detayları (`type`: `nakit` \| `visa` \| `cekSenet` \| `ciro` \| `allTime`) |
-| GET  | `/api/stok?search=` | Stok arama |
+- [KURULUM.md](docs/KURULUM.md) — VPS, alan adı/HTTPS, firma açma, yedekleme, güncelleme, sürüm yayınlama
+- [KOPRU.md](docs/KOPRU.md) — köprü kurulumu, sunucu modu, eşitleme protokolü, sorun giderme
+- [ALGORITMA.md](docs/ALGORITMA.md) — uçtan uca analiz algoritması: formüller, ağırlıklar, eşikler
+- [MIMARI.md](docs/MIMARI.md) — bileşenler, güvenlik, veri akışı, ölçek
+- [RAPORLAR.md](docs/RAPORLAR.md) — rapor kataloğu (koddan üretilir)
+- [API.md](docs/API.md) — panel API sözleşmesi
+- [ARCTOS-VEGADB.md](docs/ARCTOS-VEGADB.md) — Arctos/Vega veritabanı notları
 
-## Veritabanı Mantığı (canlı DB ile doğrulanmıştır)
+## Köprü uygulaması (Windows)
 
-### Tablolar
-| Tablo | Şablon | Önemli sütunlar | Not |
-|-------|--------|-----------------|-----|
-| Cari hareket | `F{firma}D{dönem}TBLCARIHAREKETLERI` | `TARIH`, `ISLEMTARIHI`, `BORC`, `ALACAK`, `IZAHAT` (nvarchar), `FIRMANO`, `EVRAKNO` | Cari ünvan için JOIN: **`ch.FIRMANO = c.IND`** |
-| Cari kart | `F{firma}TBLCARI` | `IND`, `UNVAN`, `FIRMAADI` | Dönemden bağımsız |
-| Kasa (nakit) | `F{firma}D{dönem}TBLKASA` | `TARIH`, `GELIR`, `GIDER`, `BELGEIZAHAT` (int), `SUBEADI` | Nakit = `SUM(GELIR) - SUM(GIDER)` |
+```bat
+start.bat              :: geliştirme: tepsi uygulaması + ayar penceresi
+build.bat              :: yerel kurulum dosyası: dist\VegaKopru-Setup-x.y.z.exe
+release.bat [patch]    :: GitHub Releases'a yayınla (kurulu köprüler kendiliğinden güncellenir)
+```
 
-### İzahat kodları (cari hareket `IZAHAT`)
-- **13 / 14** — Visa Tahsilat / Ödeme-İade
-- **21 / 22** — Gelen / Giden Çek
-- **23 / 24** — Gelen / Giden Senet
-- **103 / 104** — Cari Devir Giriş / Çıkış (yıl başı açılış; günlük ciroya değil genel duruma dahil)
-
-### Hesaplamalar
-- **Tutar (cari):** `ALACAK - BORC`
-- **Nakit (kasa):** `GELIR - GIDER` (kasa izahatı koddan bağımsız; yön GELIR/GIDER ile belirlenir)
-- **Tarih filtresi:** `TARIH` (belge/iş tarihi) üzerinden
-- **Günlük Ciro:** izlenen kodlar, devir (103/104) hariç
-- **Genel Finansal Durum:** izlenen kodların tüm zamanlar net toplamı (devir dahil)
-
-## Güvenlik
-
-- Tablo adı her istekte frontend'den gelen `firmaNo`/`donemNo` ile kurulur ve `INFORMATION_SCHEMA` üzerinden doğrulanır.
-- Tarih parametreleri parametreli sorgu ile gönderilir.
-- `config.json` parolayı PIN'den türetilen AES-256 anahtarıyla şifreler. **Not:** PIN 6 haneli olduğundan anahtar uzayı kısıtlıdır; yalnızca yerel/güvenli ortam içindir.
-- Yalnızca localhost kullanımı içindir.
+> Yeni köprü sürümü yayınlandığında eski **Vega Sorgu** masaüstü kurulumları otomatik güncellemeyle
+> köprüye dönüşür (SQL ayarları korunur; raporlar artık web panelindedir). VPS hazır olmadan yayınlamayın.

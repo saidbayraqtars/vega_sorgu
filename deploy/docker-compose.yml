@@ -1,0 +1,48 @@
+# Vega Bulut — tek komutla kurulum: API + web arayüzü (vega) ve otomatik HTTPS (caddy)
+#   cp .env.ornek .env   # alan adı, e-posta, yönetici şifresi
+#   docker compose up -d --build
+name: vega
+
+services:
+  vega:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    image: vega-bulut:latest
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      PORT: "8080"
+    volumes:
+      - vega-veri:/data
+    expose:
+      - "8080"
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "5" }
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      ALAN_ADI: ${ALAN_ADI:?deploy/.env içinde ALAN_ADI gerekli}
+      EPOSTA: ${EPOSTA:-}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-veri:/data
+      - caddy-ayar:/config
+    depends_on:
+      - vega
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+
+volumes:
+  vega-veri:
+  caddy-veri:
+  caddy-ayar:
