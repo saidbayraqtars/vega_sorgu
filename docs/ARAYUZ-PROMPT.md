@@ -119,7 +119,7 @@ Firmalar tablosu (kod, ad, köprü durumu rozeti, kullanıcı sayısı, satır, 
 Grafik paleti: açık/koyu temada okunabilir 8 renkli kategorik palet + anlam renkleri (iyi/orta/kötü). ECharts'ı tema değişince yeniden oluştur.
 
 ## 7. Veri tazeliği
-`GET /api/surum` her 60 sn; `veriSurumu` değişince önbellekteki tüm rapor yanıtlarını geçersiz kıl, görünür kutuları yenile ve küçük bildirim göster ("Veriler güncellendi"). Sekme gizliyken yoklamayı durdur. 401 → giriş ekranı.
+`GET /api/surum` her 60 sn; üst çubuktaki eşitleme durumunu (nokta, "12 dk önce") her yoklamada yanıttaki `kopru` alanından güncelle. `veriSurumu` yalnız eşitleme veriyi gerçekten değiştirdiğinde artar; değişince önbellekteki tüm rapor yanıtlarını geçersiz kıl, görünür kutuları yenile ve küçük bildirim göster ("Veriler güncellendi"). Sekme gizliyken yoklamayı durdur. 401 → giriş ekranı.
 
 ## 8. Kabul kriterleri
 1. `npm run build` hatasız; `web/dist` üretilir; `cloud` sunucusu arayüzü `http://localhost:8080`'de servis eder.

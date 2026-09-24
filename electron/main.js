@@ -8,7 +8,7 @@
 //  • Sunucu modu: oturum açılmasa da çalışsın diye SYSTEM hesabıyla Windows görevi (servis.js).
 // ═══════════════════════════════════════════════════════════════════════════
 
-const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, dialog, Notification } = require("electron");
+const { app, BrowserWindow, Tray, Menu, nativeImage, ipcMain, shell, dialog, Notification, session } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -390,6 +390,10 @@ async function cikis() {
 app.on("second-instance", () => pencereAc());
 
 app.whenReady().then(async () => {
+  // Panel (uzak içerik) ve yerel pencere yalnız panoya kopyalama/tam ekran kullanır; kamera, konum, bildirim… reddedilir
+  const IZINLI = new Set(["clipboard-sanitized-write", "fullscreen"]);
+  session.defaultSession.setPermissionRequestHandler((_wc, izin, cb) => cb(IZINLI.has(izin)));
+  session.defaultSession.setPermissionCheckHandler((_wc, izin) => IZINLI.has(izin));
   const dir = app.getPath("userData");
   eskiAyariTasi(dir);
   config = new Config(dir);
