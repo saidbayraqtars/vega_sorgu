@@ -52,6 +52,13 @@ const GRAFIK = {
 
 function additive(m) { return !m.d && m.additive !== false && !m.combo; }
 
+// "İlk N": gösterilecek satır sayısı. Varsayılan ve seçenekler rapor türüne göre (arayüz seçiciyi bunlardan kurar).
+const N = {
+  kategori: { n: 10, nSecenekler: [5, 10, 20, 50] },
+  pareto: { n: 30, nSecenekler: [10, 20, 30, 50] },
+};
+const N_MAX = 500;
+
 // ─── Katalog üretimi ──────────────────────────────────────────────────────
 function buildCatalog() {
   const list = [];
@@ -88,23 +95,33 @@ function buildCatalog() {
         continue;
       }
       add({ ...db, id: `${mid}.top.${did}`, ad: `${m.ad} — ${dAd} Sıralaması`, kisa: `En iyi ${dAd.toLocaleLowerCase("tr-TR")}`, ikon: d.ikon,
-        gorunum: "top", tur: "kategori", grafik: "cubuk", grafikler: additive(m) ? GRAFIK.kategori : GRAFIK.kategoriOran, donem: "bu_yil",
+        gorunum: "top", tur: "kategori", grafik: "cubuk", grafikler: additive(m) ? GRAFIK.kategori : GRAFIK.kategoriOran, donem: "bu_yil", ...N.kategori,
         aciklama: `${dAd} bazında ${m.ad.toLocaleLowerCase("tr-TR")} — en yüksekten düşüğe.` });
       if (additive(m) && m.birim !== "%") {
         add({ ...db, id: `${mid}.pay.${did}`, ad: `${m.ad} — ${dAd} Payları`, kisa: `${m.kisa} payı`, ikon: "PieChart",
-          gorunum: "pay", tur: "kategori", grafik: "pasta", grafikler: GRAFIK.kategori, donem: "bu_yil", aciklama: `Toplam ${m.ad.toLocaleLowerCase("tr-TR")} içindeki paylar.` });
+          gorunum: "pay", tur: "kategori", grafik: "pasta", grafikler: GRAFIK.kategori, donem: "bu_yil", ...N.kategori, aciklama: `Toplam ${m.ad.toLocaleLowerCase("tr-TR")} içindeki paylar.` });
       }
       add({ ...db, id: `${mid}.karsilastir.${did}`, ad: `${m.ad} — ${dAd} Karşılaştırma`, kisa: `${dAd} değişimi`, ikon: "ArrowUpDown",
-        gorunum: "karsilastir", tur: "kategori", grafik: "karsilastir", grafikler: GRAFIK.karsilastir, donem: "bu_ay",
+        gorunum: "karsilastir", tur: "kategori", grafik: "karsilastir", grafikler: GRAFIK.karsilastir, donem: "bu_ay", ...N.kategori,
         aciklama: `Seçilen dönem ile önceki dönem arasında en çok artan ve azalan ${dAd.toLocaleLowerCase("tr-TR")}.` });
       if (additive(m) && ["cari", "urun"].includes(did) && m.iyi !== "asagi") {
         add({ ...db, id: `${mid}.pareto.${did}`, ad: `${m.ad} — ${dAd} ABC (Pareto)`, kisa: `${dAd} ABC`, ikon: "BarChart3",
-          gorunum: "pareto", tur: "kategori", grafik: "pareto", grafikler: GRAFIK.pareto, donem: "son12",
+          gorunum: "pareto", tur: "kategori", grafik: "pareto", grafikler: GRAFIK.pareto, donem: "son12", ...N.pareto,
           aciklama: "Toplamın %80'ini oluşturanlar A, sonraki %15 B, kalanlar C." });
       }
     }
   }
   for (const r of OZEL.LIST) add({ ...r, ozel: true, grafikler: r.grafikler || GRAFIK[r.tur] || ["tablo"] });
+  // Rapor çalıştırılınca kullanılan seçiciler (katalogda ve arayüzde tek kaynak)
+  for (const r of list) {
+    r.parametreler = {
+      donem: !r.donemsiz,
+      kirilim: r.gorunum === "trend" || r.gorunum === "yoy" || !!r.kirilimli,
+      n: !!r.n,
+      nVarsayilan: r.n || null,
+      nSecenekler: r.n ? r.nSecenekler || [r.n] : null,
+    };
+  }
   return list;
 }
 
@@ -126,7 +143,7 @@ function resolveParams(ctx, rep, q = {}) {
   const kod = q.donem || rep.donem || "bu_ay";
   const donem = P.resolvePeriod(kod, { bas: q.bas, bit: q.bit, today: ctx.today, ilkTarih: ctx.firstDate() });
   let n = Number(q.n) || rep.n || 10;
-  n = Math.min(100, Math.max(3, Math.round(n)));
+  n = Math.min(N_MAX, Math.max(3, Math.round(n)));
   if (q.kirilim && !P.GRANS[q.kirilim]) throw err(`Geçersiz kırılım: ${q.kirilim}`);
   return { donem, n, kirilim: q.kirilim || null };
 }
@@ -140,8 +157,9 @@ function run(ctx, id, q = {}) {
   if (!rep) throw err(`Rapor bulunamadı: ${id}`, 404);
   const prm = resolveParams(ctx, rep, q);
   const { donem } = prm;
-  const meta = { id: rep.id, ad: rep.ad, kisa: rep.kisa, ikon: rep.ikon, kategori: rep.kategori, birim: rep.birim, iyi: rep.iyi, aciklama: rep.aciklama, grafik: rep.grafik, grafikler: rep.grafikler };
-  const envelope = (sonuc, extra = {}) => ({ rapor: meta, donem, ...extra, sonuc });
+  const meta = { id: rep.id, ad: rep.ad, kisa: rep.kisa, ikon: rep.ikon, kategori: rep.kategori, birim: rep.birim, iyi: rep.iyi || "notr", aciklama: rep.aciklama, grafik: rep.grafik, grafikler: rep.grafikler };
+  // Dönem kullanmayan raporlarda (anlık bakiye, sabit pencere) dönem bilgisi yanıltmasın
+  const envelope = (sonuc, extra = {}) => ({ rapor: meta, donem: rep.donemsiz ? null : donem, ...(rep.n ? { n: prm.n } : {}), ...extra, sonuc });
   if (rep.ozel) return envelope(OZEL.run(ctx, rep, prm, q));
 
   const m = MEASURES[rep.olcu];
@@ -242,7 +260,7 @@ function run(ctx, id, q = {}) {
       const all = rows.map((x) => { const pay = tot ? x.v / tot : 0; const once = cum; cum += pay; return { k: x.k, ad: x.ad, v: x.v, pay, kum: cum, sinif: once < 0.8 ? "A" : once < 0.95 ? "B" : "C" }; });
       const ozet = { A: { adet: 0, v: 0 }, B: { adet: 0, v: 0 }, C: { adet: 0, v: 0 } };
       for (const x of all) { ozet[x.sinif].adet++; ozet[x.sinif].v += x.v; }
-      return envelope({ tur: "kategori", birim: m.birim, boyut: { id: rep.boyut, ad: rep.boyutAd }, satirlar: all.slice(0, Math.max(prm.n, 30)), toplam: tot, adet: all.length, abc: ozet });
+      return envelope({ tur: "kategori", birim: m.birim, boyut: { id: rep.boyut, ad: rep.boyutAd }, satirlar: all.slice(0, prm.n), toplam: tot, adet: all.length, abc: ozet });
     }
     default:
       throw err(`Bilinmeyen görünüm: ${rep.gorunum}`);
@@ -255,4 +273,4 @@ function pick(r) {
   return o;
 }
 
-module.exports = { catalog, getReport, run, KATEGORILER, GRAFIK, buildCatalog };
+module.exports = { catalog, getReport, run, KATEGORILER, GRAFIK, N, N_MAX, buildCatalog };

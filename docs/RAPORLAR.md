@@ -109,54 +109,56 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 
 ## Özel analizler (46)
 
-| Rapor | Kimlik | Sonuç | Açıklama |
-|---|---|---|---|
-| **Finansal Sağlık Skoru** | `ozel.saglik` | Sağlık skoru | Likidite, kârlılık, büyüme, tahsilat ve risk ölçütlerinden 0-100 skor. |
-| **Büyüme Endeksi** | `ozel.buyume` | Büyüme endeksi | Net ciro, brüt kâr, tahsilat ve müşteri tabanının yıllık büyümesi; enflasyondan arındırılmış reel büyüme. |
-| **Anlık Finansal Durum** | `ozel.finansal_durum` | Bilanço | Kasa, banka, alacak, çek/senet ve stok varlıkları ile borç, verilen çek/senet ve kredi yükümlülükleri. |
-| **Nakit Projeksiyonu (90 gün)** | `ozel.nakit_projeksiyonu` | Projeksiyon | Vade takvimine göre kesin ve geçmiş ortalamalara göre beklenen nakit seyri. |
-| **Uyarılar** | `ozel.uyarilar` | Tablo | Kural tabanlı uyarıların tümü. |
-| **Döngü ve Verimlilik Oranları** | `ozel.oranlar` | Tablo | DSO, DPO, DIO, nakit dönüşüm süresi, nakit yeterliliği, tahsilat oranı, yoğunlaşma. |
-| **Bugünün Özeti** | `ozel.gun_ozeti` | Tablo | Bugün kesilen fatura, satış, tahsilat, kasa ve banka hareketleri. |
-| **Aylık Kapanış Tablosu** | `ozel.ay_kapanis` | Tablo | Her ay için satış, tahsilat, alış, ödeme, brüt kâr ve marj. |
-| **Yıl-Yıl Karşılaştırma** | `ozel.yil_karsilastirma` | Tablo | Bu yılın her ayı geçen yılın aynı ayıyla. |
-| **Satış Tahmini (3 ay)** | `ozel.tahmin` | Zaman serisi | Holt-Winters (mevsimsel) veya Holt (eğilim) ile önümüzdeki 3 ayın net ciro tahmini. |
-| **Kasa Bakiyeleri** | `ozel.kasa_durumu` | Kırılım | Kasa bazında nakit bakiye (Arctos 'Toplam Kasa Bakiyesi' formülü). Döviz kasaları kendi biriminde. |
-| **Banka Hesap Bakiyeleri** | `ozel.banka_durumu` | Kırılım | Aktif hesapların bakiyesi (müşteri bankaları ve pasif hesaplar hariç). Eksi bakiye = kredi kullanımı. |
-| **Kasa Bakiyesi Seyri** | `ozel.kasa_bakiye_seyri` | Zaman serisi | Dönem sonu bakiyeleri (açılış devri dahil, dönemler toplanmadan). |
-| **Banka Bakiyesi Seyri** | `ozel.banka_bakiye_seyri` | Zaman serisi | Dönem sonu bakiyeleri (açılış devri dahil, dönemler toplanmadan). |
-| **Likidite Seyri (Kasa + Banka)** | `ozel.likidite_seyri` | Zaman serisi | Kasa ve banka net bakiyelerinin toplamı. |
-| **Döviz Pozisyonu** | `ozel.doviz` | Tablo | Döviz kasa ve hesapları kendi para biriminde (TL toplamına karışmaz). |
-| **Alacak Yaşlandırma** | `ozel.alacak_yaslandirma` | Grafik + tablo | Açık alacaklar vadesine göre (FIFO: bakiye en yeni faturalara dağıtılır). |
-| **Borçlu Müşteriler** | `ozel.borclu_musteriler` | Tablo | Bize borcu olan cariler (aktif dönem bakiyesi, KREDIHESABI ve personel hariç). |
-| **Borçlu Olduğumuz Cariler** | `ozel.alacakli_tedarikciler` | Tablo | Tedarikçilere olan borçlar (eksi bakiyeler). |
-| **Hareketsiz Alacaklar** | `ozel.hareketsiz_alacak` | Tablo | 90 günden uzun süredir hareketi olmayan ama bakiyesi olan müşteriler. |
-| **Kredi Limiti Aşımı** | `ozel.limit_asimi` | Tablo | Bakiyesi cari kartındaki kredi limitini aşan müşteriler. |
-| **Tahsil Süresi (DSO) Seyri** | `ozel.dso_seyri` | Zaman serisi | Her ay sonu: alacak / (son 90 günün satışı / 90). |
-| **Alacak ve Borç Seyri** | `ozel.alacak_borc_seyri` | Zaman serisi | Ay sonları itibarıyla toplam ticari alacak ve borç. |
-| **Alınan Çekler (Portföy)** | `ozel.cek_alinan` | Tablo | Alınan Çekler (Portföy): yalnız açık olanlar (VARES görünümü; alınanlarda 'Tahsilat Yok', verilenlerde 'Ödenecek'). |
-| **Verilen Çekler (Ödenecek)** | `ozel.cek_verilen` | Tablo | Verilen Çekler (Ödenecek): yalnız açık olanlar (VARES görünümü; alınanlarda 'Tahsilat Yok', verilenlerde 'Ödenecek'). |
-| **Alınan Senetler** | `ozel.senet_alinan` | Tablo | Alınan Senetler: yalnız açık olanlar (VARES görünümü; alınanlarda 'Tahsilat Yok', verilenlerde 'Ödenecek'). |
-| **Verilen Senetler** | `ozel.senet_verilen` | Tablo | Verilen Senetler: yalnız açık olanlar (VARES görünümü; alınanlarda 'Tahsilat Yok', verilenlerde 'Ödenecek'). |
-| **Vade Takvimi (Haftalık)** | `ozel.vade_takvimi` | Zaman serisi | Önümüzdeki 12 haftada tahsil edilecek ve ödenecek çek/senetler. |
-| **Alınan Çekler — Banka Dağılımı** | `ozel.cek_banka` | Kırılım | Portföydeki alınan çeklerin keşideci bankalara dağılımı. |
-| **Müşteri Segmentleri (RFM)** | `ozel.rfm` | Grafik + tablo | Son alış zamanı, alış sıklığı ve tutarına göre şampiyon, sadık, risk altında, uykuda… müşteriler. |
-| **Yeni, Kayıp ve Geri Dönen Müşteriler** | `ozel.yeni_kayip` | Grafik + tablo | Dönemde ilk kez alan, önceki dönemde alıp bu dönemde almayan ve uzun aradan sonra dönen müşteriler. |
-| **Müşteri Kârlılığı** | `ozel.musteri_karlilik` | Tablo | Müşteri bazında net satış, maliyet, brüt kâr ve marj. |
-| **Ürün Kârlılığı** | `ozel.urun_karlilik` | Tablo | Ürün bazında net satış, maliyet, brüt kâr ve marj (Arctos kâr analizi). |
-| **Ürün Sınıfı Kârlılığı** | `ozel.sinif_karlilik` | Tablo | Stok sınıfı (KOD2) bazında kârlılık. |
-| **Zararına Satılan Ürünler** | `ozel.zararli_urunler` | Tablo | Satış tutarı maliyetinin altında kalan ürünler. |
-| **Ürün Matrisi (Büyüme × Marj)** | `ozel.urun_matrisi` | Tablo | Her ürün için satış büyümesi (geçen yılın aynı dönemine göre) ve brüt marj: yıldızlar, nakit inekleri, sorunlular. |
-| **Ürün ABC Analizi** | `ozel.abc_urun` | Grafik + tablo | Son 12 ayın net satışına göre A/B/C sınıfları. |
-| **Müşteri ABC Analizi** | `ozel.abc_musteri` | Grafik + tablo | Son 12 ayın satışına göre A/B/C müşteri sınıfları. |
-| **Stok Değeri** | `ozel.stok_degeri` | Kırılım | Depo envanteri (SUM(ENVANTER), rezerv hariç) × kart maliyeti, sınıf bazında. |
-| **Eksi Stoklu Ürünler** | `ozel.eksi_stok` | Tablo | Depo envanteri eksiye düşmüş ürünler — giriş belgesi eksik olabilir. |
-| **Kritik Seviyenin Altındakiler** | `ozel.kritik_stok` | Tablo | Kalanı kart kritik seviyesinin altında olan (sipariş verilmesi gereken) ürünler. |
-| **Ölü Stok** | `ozel.olu_stok` | Tablo | Stoğu olduğu hâlde son 180 günde hiç satılmamış ürünler. |
-| **Stok Devir Hızı** | `ozel.stok_devir` | Tablo | Son 90 günün satış miktarına göre kaç günlük stok olduğu ve devir hızı. |
-| **Cari İzahat Dağılımı** | `ozel.izahat_dagilimi` | Tablo | Cari hareket kodlarının dağılımı ve hangi iş olayına eşlendiği (ayarlardan değiştirilebilir). |
-| **Havale Mutabakatı (Banka 83 ↔ Cari 83)** | `ozel.havale_mutabakat` | Tablo | Banka havale girişleri ile cari havale tahsilatları kuruşu kuruşuna tutmalı (Kılavuz §36.10). |
-| **Veri Kapsamı** | `ozel.veri_kapsami` | Tablo | Köprüden gelen veri kümeleri: satır sayısı, ilk ve son tarih. |
+Dönem sütunu: *anlık* = dönem seçimi uygulanmaz (güncel bakiye ya da sabit pencere). İlk N: varsayılan satır sayısı.
+
+| Rapor | Kimlik | Sonuç | Dönem | İlk N | Açıklama |
+|---|---|---|---|---:|---|
+| **Finansal Sağlık Skoru** | `ozel.saglik` | Sağlık skoru | anlık | — | Likidite, kârlılık, büyüme, tahsilat ve risk ölçütlerinden 0-100 skor. |
+| **Büyüme Endeksi** | `ozel.buyume` | Büyüme endeksi | anlık | — | Net ciro, brüt kâr, tahsilat ve müşteri tabanının yıllık büyümesi; enflasyondan arındırılmış reel büyüme. |
+| **Anlık Finansal Durum** | `ozel.finansal_durum` | Bilanço | anlık | — | Kasa, banka, alacak, çek/senet ve stok varlıkları ile borç, verilen çek/senet ve kredi yükümlülükleri. |
+| **Nakit Projeksiyonu (90 gün)** | `ozel.nakit_projeksiyonu` | Projeksiyon | anlık | — | Vade takvimine göre kesin ve geçmiş ortalamalara göre beklenen nakit seyri. |
+| **Uyarılar** | `ozel.uyarilar` | Tablo | anlık | — | Kural tabanlı uyarıların tümü. |
+| **Döngü ve Verimlilik Oranları** | `ozel.oranlar` | Tablo | anlık | — | DSO, DPO, DIO, nakit dönüşüm süresi, nakit yeterliliği, tahsilat oranı, yoğunlaşma. |
+| **Bugünün Özeti** | `ozel.gun_ozeti` | Tablo | Bugün | — | Bugün kesilen fatura, satış, tahsilat, kasa ve banka hareketleri. |
+| **Aylık Kapanış Tablosu** | `ozel.ay_kapanis` | Tablo | Son 12 ay | — | Her ay için satış, tahsilat, alış, ödeme, brüt kâr ve marj. |
+| **Yıl-Yıl Karşılaştırma** | `ozel.yil_karsilastirma` | Tablo | Bu yıl | — | Bu yılın her ayı geçen yılın aynı ayıyla. |
+| **Satış Tahmini (3 ay)** | `ozel.tahmin` | Zaman serisi | anlık | — | Holt-Winters (mevsimsel) veya Holt (eğilim) ile önümüzdeki 3 ayın net ciro tahmini. |
+| **Kasa Bakiyeleri** | `ozel.kasa_durumu` | Kırılım | anlık | — | Kasa bazında nakit bakiye (Arctos 'Toplam Kasa Bakiyesi' formülü). Döviz kasaları kendi biriminde. |
+| **Banka Hesap Bakiyeleri** | `ozel.banka_durumu` | Kırılım | anlık | — | Aktif hesapların bakiyesi (müşteri bankaları ve pasif hesaplar hariç). Eksi bakiye = kredi kullanımı. |
+| **Kasa Bakiyesi Seyri** | `ozel.kasa_bakiye_seyri` | Zaman serisi | Son 12 ay | — | Dönem sonu bakiyeleri (açılış devri dahil, dönemler toplanmadan). |
+| **Banka Bakiyesi Seyri** | `ozel.banka_bakiye_seyri` | Zaman serisi | Son 12 ay | — | Dönem sonu bakiyeleri (açılış devri dahil, dönemler toplanmadan). |
+| **Likidite Seyri (Kasa + Banka)** | `ozel.likidite_seyri` | Zaman serisi | Son 12 ay | — | Kasa ve banka net bakiyelerinin toplamı. |
+| **Döviz Pozisyonu** | `ozel.doviz` | Tablo | anlık | — | Döviz kasa ve hesapları kendi para biriminde (TL toplamına karışmaz). |
+| **Alacak Yaşlandırma** | `ozel.alacak_yaslandirma` | Grafik + tablo | anlık | 50 | Açık alacaklar vadesine göre (FIFO: bakiye en yeni faturalara dağıtılır). |
+| **Borçlu Müşteriler** | `ozel.borclu_musteriler` | Tablo | anlık | 100 | Bize borcu olan cariler (aktif dönem bakiyesi, KREDIHESABI ve personel hariç). |
+| **Borçlu Olduğumuz Cariler** | `ozel.alacakli_tedarikciler` | Tablo | anlık | 100 | Tedarikçilere olan borçlar (eksi bakiyeler). |
+| **Hareketsiz Alacaklar** | `ozel.hareketsiz_alacak` | Tablo | anlık | 100 | 90 günden uzun süredir hareketi olmayan ama bakiyesi olan müşteriler. |
+| **Kredi Limiti Aşımı** | `ozel.limit_asimi` | Tablo | anlık | 100 | Bakiyesi cari kartındaki kredi limitini aşan müşteriler. |
+| **Tahsil Süresi (DSO) Seyri** | `ozel.dso_seyri` | Zaman serisi | Son 12 ay | — | Her ay sonu: alacak / (son 90 günün satışı / 90). |
+| **Alacak ve Borç Seyri** | `ozel.alacak_borc_seyri` | Zaman serisi | Son 12 ay | — | Ay sonları itibarıyla toplam ticari alacak ve borç. |
+| **Alınan Çekler (Portföy)** | `ozel.cek_alinan` | Tablo | anlık | 100 | Alınan Çekler (Portföy): yalnız açık olanlar (VARES görünümü; alınanlarda 'Tahsilat Yok', verilenlerde 'Ödenecek'). |
+| **Verilen Çekler (Ödenecek)** | `ozel.cek_verilen` | Tablo | anlık | 100 | Verilen Çekler (Ödenecek): yalnız açık olanlar (VARES görünümü; alınanlarda 'Tahsilat Yok', verilenlerde 'Ödenecek'). |
+| **Alınan Senetler** | `ozel.senet_alinan` | Tablo | anlık | 100 | Alınan Senetler: yalnız açık olanlar (VARES görünümü; alınanlarda 'Tahsilat Yok', verilenlerde 'Ödenecek'). |
+| **Verilen Senetler** | `ozel.senet_verilen` | Tablo | anlık | 100 | Verilen Senetler: yalnız açık olanlar (VARES görünümü; alınanlarda 'Tahsilat Yok', verilenlerde 'Ödenecek'). |
+| **Vade Takvimi (Haftalık)** | `ozel.vade_takvimi` | Zaman serisi | anlık | — | Önümüzdeki 12 haftada tahsil edilecek ve ödenecek çek/senetler. |
+| **Alınan Çekler — Banka Dağılımı** | `ozel.cek_banka` | Kırılım | anlık | — | Portföydeki alınan çeklerin keşideci bankalara dağılımı. |
+| **Müşteri Segmentleri (RFM)** | `ozel.rfm` | Grafik + tablo | anlık | 100 | Son alış zamanı, alış sıklığı ve tutarına göre şampiyon, sadık, risk altında, uykuda… müşteriler. |
+| **Yeni, Kayıp ve Geri Dönen Müşteriler** | `ozel.yeni_kayip` | Grafik + tablo | Bu ay | 30 | Dönemde ilk kez alan, önceki dönemde alıp bu dönemde almayan ve uzun aradan sonra dönen müşteriler. |
+| **Müşteri Kârlılığı** | `ozel.musteri_karlilik` | Tablo | Bu yıl | 100 | Müşteri bazında net satış, maliyet, brüt kâr ve marj. |
+| **Ürün Kârlılığı** | `ozel.urun_karlilik` | Tablo | Bu yıl | 100 | Ürün bazında net satış, maliyet, brüt kâr ve marj (Arctos kâr analizi). |
+| **Ürün Sınıfı Kârlılığı** | `ozel.sinif_karlilik` | Tablo | Bu yıl | 100 | Stok sınıfı (KOD2) bazında kârlılık. |
+| **Zararına Satılan Ürünler** | `ozel.zararli_urunler` | Tablo | Son 90 gün | 100 | Satış tutarı maliyetinin altında kalan ürünler. |
+| **Ürün Matrisi (Büyüme × Marj)** | `ozel.urun_matrisi` | Tablo | Son 90 gün | 100 | Her ürün için satış büyümesi (geçen yılın aynı dönemine göre) ve brüt marj: yıldızlar, nakit inekleri, sorunlular. |
+| **Ürün ABC Analizi** | `ozel.abc_urun` | Grafik + tablo | anlık | 100 | Son 12 ayın net satışına göre A/B/C sınıfları. |
+| **Müşteri ABC Analizi** | `ozel.abc_musteri` | Grafik + tablo | anlık | 100 | Son 12 ayın satışına göre A/B/C müşteri sınıfları. |
+| **Stok Değeri** | `ozel.stok_degeri` | Kırılım | anlık | — | Depo envanteri (SUM(ENVANTER), rezerv hariç) × kart maliyeti, sınıf bazında. |
+| **Eksi Stoklu Ürünler** | `ozel.eksi_stok` | Tablo | anlık | 100 | Depo envanteri eksiye düşmüş ürünler — giriş belgesi eksik olabilir. |
+| **Kritik Seviyenin Altındakiler** | `ozel.kritik_stok` | Tablo | anlık | 100 | Kalanı kart kritik seviyesinin altında olan (sipariş verilmesi gereken) ürünler. |
+| **Ölü Stok** | `ozel.olu_stok` | Tablo | anlık | 100 | Stoğu olduğu hâlde son 180 günde hiç satılmamış ürünler. |
+| **Stok Devir Hızı** | `ozel.stok_devir` | Tablo | anlık | 100 | Son 90 günün satış miktarına göre kaç günlük stok olduğu ve devir hızı. |
+| **Cari İzahat Dağılımı** | `ozel.izahat_dagilimi` | Tablo | Bu yıl | — | Cari hareket kodlarının dağılımı ve hangi iş olayına eşlendiği (ayarlardan değiştirilebilir). |
+| **Havale Mutabakatı (Banka 83 ↔ Cari 83)** | `ozel.havale_mutabakat` | Tablo | Son 12 ay | — | Banka havale girişleri ile cari havale tahsilatları kuruşu kuruşuna tutmalı (Kılavuz §36.10). |
+| **Veri Kapsamı** | `ozel.veri_kapsami` | Tablo | anlık | — | Köprüden gelen veri kümeleri: satır sayısı, ilk ve son tarih. |
 
 ## Tüm raporlar
 
@@ -164,16 +166,16 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 
 | Rapor | Kimlik | Sonuç | Varsayılan dönem | Grafikler |
 |---|---|---|---|---|
-| Finansal Sağlık Skoru | `ozel.saglik` | Sağlık skoru | Bu ay | gosterge |
-| Büyüme Endeksi | `ozel.buyume` | Büyüme endeksi | Bu ay | buyume |
-| Anlık Finansal Durum | `ozel.finansal_durum` | Bilanço | Bu ay | bilanco, tablo |
-| Nakit Projeksiyonu (90 gün) | `ozel.nakit_projeksiyonu` | Projeksiyon | Bu ay | cizgi |
-| Uyarılar | `ozel.uyarilar` | Tablo | Bu ay | tablo |
-| Döngü ve Verimlilik Oranları | `ozel.oranlar` | Tablo | Bu ay | tablo |
+| Finansal Sağlık Skoru | `ozel.saglik` | Sağlık skoru | — (anlık) | gosterge |
+| Büyüme Endeksi | `ozel.buyume` | Büyüme endeksi | — (anlık) | buyume |
+| Anlık Finansal Durum | `ozel.finansal_durum` | Bilanço | — (anlık) | bilanco, tablo |
+| Nakit Projeksiyonu (90 gün) | `ozel.nakit_projeksiyonu` | Projeksiyon | — (anlık) | cizgi |
+| Uyarılar | `ozel.uyarilar` | Tablo | — (anlık) | tablo |
+| Döngü ve Verimlilik Oranları | `ozel.oranlar` | Tablo | — (anlık) | tablo |
 | Bugünün Özeti | `ozel.gun_ozeti` | Tablo | Bugün | tablo |
 | Aylık Kapanış Tablosu | `ozel.ay_kapanis` | Tablo | Son 12 ay | tablo |
 | Yıl-Yıl Karşılaştırma | `ozel.yil_karsilastirma` | Tablo | Bu yıl | tablo |
-| Satış Tahmini (3 ay) | `ozel.tahmin` | Zaman serisi | Bu ay | cizgi, sutun, tablo |
+| Satış Tahmini (3 ay) | `ozel.tahmin` | Zaman serisi | — (anlık) | cizgi, sutun, tablo |
 
 </details>
 
@@ -585,9 +587,9 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 | Müşteri Başına Satış — Haftanın Günü Dağılımı | `musteri_basi.dagilim.haftagunu` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Müşteri Başına Satış — Ay Dağılımı | `musteri_basi.dagilim.ayadi` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Müşteri Başına Satış — Saat Dağılımı | `musteri_basi.dagilim.saat` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
-| Müşteri Segmentleri (RFM) | `ozel.rfm` | Grafik + tablo | Bu ay | coklu |
+| Müşteri Segmentleri (RFM) | `ozel.rfm` | Grafik + tablo | — (anlık) | coklu |
 | Yeni, Kayıp ve Geri Dönen Müşteriler | `ozel.yeni_kayip` | Grafik + tablo | Bu ay | coklu |
-| Müşteri ABC Analizi | `ozel.abc_musteri` | Grafik + tablo | Bu ay | coklu |
+| Müşteri ABC Analizi | `ozel.abc_musteri` | Grafik + tablo | — (anlık) | coklu |
 
 </details>
 
@@ -738,7 +740,7 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 | Ortalama Birim Fiyat — Haftanın Günü Dağılımı | `birim_fiyat.dagilim.haftagunu` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Ortalama Birim Fiyat — Ay Dağılımı | `birim_fiyat.dagilim.ayadi` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Ürün Matrisi (Büyüme × Marj) | `ozel.urun_matrisi` | Tablo | Son 90 gün | tablo |
-| Ürün ABC Analizi | `ozel.abc_urun` | Grafik + tablo | Bu ay | coklu |
+| Ürün ABC Analizi | `ozel.abc_urun` | Grafik + tablo | — (anlık) | coklu |
 
 </details>
 
@@ -746,11 +748,11 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 
 | Rapor | Kimlik | Sonuç | Varsayılan dönem | Grafikler |
 |---|---|---|---|---|
-| Stok Değeri | `ozel.stok_degeri` | Kırılım | Bu ay | agac, pasta, cubuk, tablo |
-| Eksi Stoklu Ürünler | `ozel.eksi_stok` | Tablo | Bu ay | tablo |
-| Kritik Seviyenin Altındakiler | `ozel.kritik_stok` | Tablo | Bu ay | tablo |
-| Ölü Stok | `ozel.olu_stok` | Tablo | Bu ay | tablo |
-| Stok Devir Hızı | `ozel.stok_devir` | Tablo | Bu ay | tablo |
+| Stok Değeri | `ozel.stok_degeri` | Kırılım | — (anlık) | agac, pasta, cubuk, tablo |
+| Eksi Stoklu Ürünler | `ozel.eksi_stok` | Tablo | — (anlık) | tablo |
+| Kritik Seviyenin Altındakiler | `ozel.kritik_stok` | Tablo | — (anlık) | tablo |
+| Ölü Stok | `ozel.olu_stok` | Tablo | — (anlık) | tablo |
+| Stok Devir Hızı | `ozel.stok_devir` | Tablo | — (anlık) | tablo |
 
 </details>
 
@@ -905,10 +907,10 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 | Ticari Nakit Dengesi — Haftanın Günü Dağılımı | `ticari_denge.dagilim.haftagunu` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Ticari Nakit Dengesi — Ay Dağılımı | `ticari_denge.dagilim.ayadi` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Ticari Nakit Dengesi — Saat Dağılımı | `ticari_denge.dagilim.saat` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
-| Alacak Yaşlandırma | `ozel.alacak_yaslandirma` | Grafik + tablo | Bu ay | coklu |
-| Borçlu Müşteriler | `ozel.borclu_musteriler` | Tablo | Bu ay | tablo |
-| Hareketsiz Alacaklar | `ozel.hareketsiz_alacak` | Tablo | Bu ay | tablo |
-| Kredi Limiti Aşımı | `ozel.limit_asimi` | Tablo | Bu ay | tablo |
+| Alacak Yaşlandırma | `ozel.alacak_yaslandirma` | Grafik + tablo | — (anlık) | coklu |
+| Borçlu Müşteriler | `ozel.borclu_musteriler` | Tablo | — (anlık) | tablo |
+| Hareketsiz Alacaklar | `ozel.hareketsiz_alacak` | Tablo | — (anlık) | tablo |
+| Kredi Limiti Aşımı | `ozel.limit_asimi` | Tablo | — (anlık) | tablo |
 | Tahsil Süresi (DSO) Seyri | `ozel.dso_seyri` | Zaman serisi | Son 12 ay | cizgi, sutun, tablo |
 | Alacak ve Borç Seyri | `ozel.alacak_borc_seyri` | Zaman serisi | Son 12 ay | cizgi, alan, sutun, tablo |
 
@@ -1048,7 +1050,7 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 | Alış Miktarı — Firma Karşılaştırma | `alis_miktar.karsilastir.firma` | Kırılım | Bu ay | karsilastir, tablo |
 | Alış Miktarı — Haftanın Günü Dağılımı | `alis_miktar.dagilim.haftagunu` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Alış Miktarı — Ay Dağılımı | `alis_miktar.dagilim.ayadi` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
-| Borçlu Olduğumuz Cariler | `ozel.alacakli_tedarikciler` | Tablo | Bu ay | tablo |
+| Borçlu Olduğumuz Cariler | `ozel.alacakli_tedarikciler` | Tablo | — (anlık) | tablo |
 
 </details>
 
@@ -1148,7 +1150,7 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 | Kasa Masrafları (cari dışı) — Firma Karşılaştırma | `kasa_gider_diger.karsilastir.firma` | Kırılım | Bu ay | karsilastir, tablo |
 | Kasa Masrafları (cari dışı) — Haftanın Günü Dağılımı | `kasa_gider_diger.dagilim.haftagunu` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Kasa Masrafları (cari dışı) — Ay Dağılımı | `kasa_gider_diger.dagilim.ayadi` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
-| Kasa Bakiyeleri | `ozel.kasa_durumu` | Kırılım | Bu ay | cubuk, tablo |
+| Kasa Bakiyeleri | `ozel.kasa_durumu` | Kırılım | — (anlık) | cubuk, tablo |
 | Kasa Bakiyesi Seyri | `ozel.kasa_bakiye_seyri` | Zaman serisi | Son 12 ay | alan, cizgi, sutun, tablo |
 | Likidite Seyri (Kasa + Banka) | `ozel.likidite_seyri` | Zaman serisi | Son 12 ay | alan, cizgi, tablo |
 
@@ -1218,9 +1220,9 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 | Banka Net Akışı — Firma Karşılaştırma | `banka_net.karsilastir.firma` | Kırılım | Bu ay | karsilastir, tablo |
 | Banka Net Akışı — Haftanın Günü Dağılımı | `banka_net.dagilim.haftagunu` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
 | Banka Net Akışı — Ay Dağılımı | `banka_net.dagilim.ayadi` | Kırılım | Son 90 gün | sutun, cubuk, tablo |
-| Banka Hesap Bakiyeleri | `ozel.banka_durumu` | Kırılım | Bu ay | cubuk, tablo |
+| Banka Hesap Bakiyeleri | `ozel.banka_durumu` | Kırılım | — (anlık) | cubuk, tablo |
 | Banka Bakiyesi Seyri | `ozel.banka_bakiye_seyri` | Zaman serisi | Son 12 ay | alan, cizgi, sutun, tablo |
-| Döviz Pozisyonu | `ozel.doviz` | Tablo | Bu ay | tablo |
+| Döviz Pozisyonu | `ozel.doviz` | Tablo | — (anlık) | tablo |
 
 </details>
 
@@ -1228,12 +1230,12 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 
 | Rapor | Kimlik | Sonuç | Varsayılan dönem | Grafikler |
 |---|---|---|---|---|
-| Alınan Çekler (Portföy) | `ozel.cek_alinan` | Tablo | Bu ay | tablo |
-| Verilen Çekler (Ödenecek) | `ozel.cek_verilen` | Tablo | Bu ay | tablo |
-| Alınan Senetler | `ozel.senet_alinan` | Tablo | Bu ay | tablo |
-| Verilen Senetler | `ozel.senet_verilen` | Tablo | Bu ay | tablo |
-| Vade Takvimi (Haftalık) | `ozel.vade_takvimi` | Zaman serisi | Bu ay | sutun, tablo |
-| Alınan Çekler — Banka Dağılımı | `ozel.cek_banka` | Kırılım | Bu ay | pasta, cubuk, tablo |
+| Alınan Çekler (Portföy) | `ozel.cek_alinan` | Tablo | — (anlık) | tablo |
+| Verilen Çekler (Ödenecek) | `ozel.cek_verilen` | Tablo | — (anlık) | tablo |
+| Alınan Senetler | `ozel.senet_alinan` | Tablo | — (anlık) | tablo |
+| Verilen Senetler | `ozel.senet_verilen` | Tablo | — (anlık) | tablo |
+| Vade Takvimi (Haftalık) | `ozel.vade_takvimi` | Zaman serisi | — (anlık) | sutun, tablo |
+| Alınan Çekler — Banka Dağılımı | `ozel.cek_banka` | Kırılım | — (anlık) | pasta, cubuk, tablo |
 
 </details>
 
@@ -1332,6 +1334,6 @@ Toplam: 1.039 ölçü tabanlı + 46 özel = **1.085** rapor.
 |---|---|---|---|---|
 | Cari İzahat Dağılımı | `ozel.izahat_dagilimi` | Tablo | Bu yıl | tablo |
 | Havale Mutabakatı (Banka 83 ↔ Cari 83) | `ozel.havale_mutabakat` | Tablo | Son 12 ay | tablo |
-| Veri Kapsamı | `ozel.veri_kapsami` | Tablo | Bu ay | tablo |
+| Veri Kapsamı | `ozel.veri_kapsami` | Tablo | — (anlık) | tablo |
 
 </details>

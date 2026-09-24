@@ -5,7 +5,9 @@ Arayüz (web) ile bulut sunucusu (`cloud/`) arasındaki sözleşme. Tüm uçlar 
 - **Kimlik:** `POST /api/auth/giris` başarılı olunca `vb_oturum` adlı **httpOnly** çerez yazılır. Sonraki tüm isteklerde tarayıcı çerezi otomatik yollar (`fetch(..., { credentials: "same-origin" })`).
 - **Hata biçimi:** HTTP durum kodu + `{ "hata": "Türkçe açıklama" }`. `401` → oturum yok/bitmiş (giriş ekranına dön), `403` → yetki yok, `409` → sistem yöneticisi henüz firma seçmemiş.
 - **Değiştiren istekler** (POST/PUT/DELETE) aynı kökten gelmeli (`Origin` = sunucu); `Content-Type: application/json`.
-- **Sayılar** ham JS sayısıdır (TL, adet, oran). Oranlar/yüzdeler aksi belirtilmedikçe **kesir**dir (0.25 = %25). Birim `"%"` olan ölçülerde değer zaten yüzdedir (25.3 = %25,3).
+- **Sayılar** ham JS sayısıdır (TL, adet, oran). Oranlar/yüzdeler aksi belirtilmedikçe **kesir**dir (0.25 = %25).
+  Bir değerin yanında **`birim`** alanı varsa (rapor sonuçları, sağlık ölçütleri) kural tektir:
+  `"%"` → değer zaten yüzdedir (25.3 = %25,3) · `"puan"` → yüzde puanıdır (−9.3 = −9,3 puan) · `"x"` → kat · `"gün"` → gün · `"TL"`, `"adet"`.
 - **Tarihler** `"YYYY-MM-DD"` metnidir (Türkiye saati). Zaman damgaları ISO 8601.
 - **Firma seçimi:** veri uçları `?firma=0101,0103` kabul eder (4 haneli firma kodları). Verilmezse son 400 günde hareketi olan firmalar (etkin firmalar) birlikte (konsolide) hesaplanır. `?firma=hepsi` → kapanmış firmalar dahil hepsi.
 - **Dönem:** rapor uçları `?donem=<kod>` alır; `ozel` için ayrıca `&bas=YYYY-MM-DD&bit=YYYY-MM-DD`.
@@ -23,15 +25,23 @@ Kırılım kodları: `gun, hafta, ay, ceyrek, yil`
 | `POST /api/auth/cikis` | — | `{ tamam: true }` |
 | `GET /api/auth/ben` | — | `{ kullanici: Kullanici }` veya 401 |
 | `POST /api/auth/sifre` | `{ eski, yeni }` | `{ tamam: true }` |
-| `PUT /api/auth/tercihler` | `{ tema?: "acik"\|"koyu"\|"sistem", donem?: string, firmalar?: string[], anaPano?: number }` | `{ tercihler }` |
+| `PUT /api/auth/tercihler` | `Tercihler` (yalnız gönderilen alanlar değişir; geçersiz değerler yok sayılır) | `{ tercihler }` |
 
 ```ts
 type Kullanici = {
   id: number; kullanici: string; ad: string;
   rol: "super" | "admin" | "user";        // super = sistem yöneticisi, admin = firma yöneticisi, user = izleyici
-  tercihler: { tema?: string; donem?: string; firmalar?: string[]; anaPano?: number };
+  tercihler: Tercihler;
   firma: { id: number; kod: string; ad: string } | null;          // kullanıcının bağlı olduğu kiracı
   gorunenFirma: { id: number; kod: string; ad: string } | null;   // super için seçili kiracı
+};
+type Tercihler = {
+  tema?: "acik" | "koyu" | "sistem";
+  donem?: string;                        // hazır dönem kodu ya da "ozel"
+  donemBas?: string | null;              // "ozel" için YYYY-AA-GG (null → temizle)
+  donemBit?: string | null;
+  firmalar?: string[];                   // 4 haneli kodlar · ["hepsi"] = kapanmış firmalar dahil tümü · [] = etkin firmalar
+  anaPano?: number;
 };
 ```
 
@@ -65,8 +75,9 @@ type KopruDurumu = {
 };
 ```
 
-`GET /api/surum` — **60 sn'de bir yoklayın**; `veriSurumu` değişince ekrandaki verileri yeniden çekin (sürüm yalnız eşitleme gerçekten veri değiştirdiğinde artar; son eşitleme zamanı için `kopru.sonEsitleme` kullanın):
-`{ veriSurumu: number, esitleniyor: boolean, bekleyenIstek: boolean, kopru: KopruDurumu }`
+`GET /api/surum[?firma=]` — **60 sn'de bir yoklayın**; `veriSurumu` değişince ekrandaki verileri yeniden çekin (sürüm yalnız eşitleme gerçekten veri değiştirdiğinde artar; son eşitleme zamanı için `kopru.sonEsitleme` kullanın):
+`{ veriSurumu: number, esitleniyor: boolean, bekleyenIstek: boolean, kopru: KopruDurumu, uyariOzet: { kritik, uyari, bilgi } }`
+— `uyariOzet` uyarı rozeti içindir (önbellekten gelir, ucuzdur); `firma` parametresini diğer isteklerle aynı gönderin.
 
 `POST /api/guncelle` — "Şimdi güncelle" düğmesi. Köprü ≤ 60 sn içinde eşitler. `{ tamam, mesaj }`
 
@@ -95,8 +106,11 @@ type KopruDurumu = {
     "netIsletmeSermayesi": 27411969,
     "oranlar": { "cari": 1.34, "asitTest": 1.09, "nakit": 0.25 }
   },
-  "oranlar": { "dso": 71.8, "dpo": 56.9, "dio": 61.5, "ccc": 76.3, "nakitGun": 41.2, "tahsilatOrani90": 101.1,
-               "marj": 29.96, "marjTrend": 0.4, "ilk5Pay": 0.19, "vadesiGecenOran": 0.37, "kaldirac": 0.21 },
+  "oranlar": { "dso": 71.8, "dpo": 56.9, "dio": 61.5, "ccc": 76.3, "nakitGun": 41.2,   // gün
+               "tahsilatOrani90": 101.1, "marj": 29.96,                                  // yüzde (%)
+               "marjTrend": 0.4,                                                          // yüzde puanı
+               "ilk5Pay": 0.19, "vadesiGecenOran": 0.37,                                  // kesir
+               "kaldirac": 0.21 },                                                        // kat
   "buAy": {                                    // ay başından bugüne
     "satis":    { "simdi": 0, "gecenYil": 0, "onceki": 0, "yoy": 0.16, "pop": 0.27 },
     "tahsilat": { ... }, "kar": { ... }, "siparis": { ... }
@@ -125,7 +139,8 @@ type Saglik = {
   sutunlar: Array<{               // 5 sütun
     id: "likidite" | "karlilik" | "buyume" | "dongu" | "risk"; ad: string; ikon: string; agirlik: number;
     skor: number | null; not: string | null; etiket: string; renk: string; kapsam: number;
-    olcutler: Array<{ id: string; ad: string; ikon: string; deger: number | null; birim: string;
+    olcutler: Array<{ id: string; ad: string; ikon: string;
+                      deger: number | null; birim: "%" | "puan" | "x" | "gün";   // % → 29.96 · puan → −9.3 (genel birim kuralı)
                       skor: number | null; aciklama: string; ideal: string }>;
   }>;
   olumlu: Olcut[]; olumsuz: Olcut[];       // en etkili 4'er ölçüt ("neden bu skor?")
@@ -140,7 +155,7 @@ type Buyume = {
   enflasyon: number | null;             // ayarlardaki yıllık TÜFE %
   bilesenler: Array<{ id: "ciro" | "kar" | "tahsilat" | "musteri"; ad: string; ikon: string; agirlik: number;
                       simdi: number; onceki: number; yuzde: number | null }>;
-  ivme: { deger: number; durum: "hizlaniyor" | "yavasliyor" | "dengeli" } | null;
+  ivme: { deger: number; durum: "hizlaniyor" | "yavasliyor" | "dengeli" } | null;   // deger kesir: −0.093 = −9,3 puan
   detay: { ay: Karsi, ayOnceki: Karsi, yil: Karsi, ttm: Karsi, son90: Karsi, trend: number | null };
   tahmin: { yontem: string; aylar: Array<{ k: "YYYY-MM"; deger: number; alt: number; ust: number }> } | null;
   yilSonu?: { deger: number; gecenYil: number; yuzde: number | null };
@@ -156,6 +171,10 @@ type Uyari = {
 ```
 
 `GET /api/uyarilar[?firma=]` → `{ uyarilar: Uyari[], ozet: { kritik, uyari, bilgi } }`
+
+"Veriler güncel değil" (`id: "veri_eski"`; 60 dk'dan eski eşitleme → uyari, 3 saatten eski → kritik) her istekte güncel
+hesaplanır: köprü sustuğunda veri sürümü değişmediği hâlde `/uyarilar`, `/durum` ve `/surum.uyariOzet`'te görünür.
+Demo firmalarda üretilmez.
 
 ## 4. Rapor kataloğu ve çalıştırma
 
@@ -174,10 +193,17 @@ type RaporTanimi = {
   grafikler: GrafikTuru[];    // kullanıcının seçebileceği grafikler
   donem: string;              // varsayılan dönem kodu
   birim: "TL" | "adet" | "%" | "gün" | "x";
+  iyi: "yukari" | "asagi" | "notr";   // artış iyi mi? (değişim renkleri)
   aciklama: string;
   olcu: string | null; boyut: string | null;
   gorunum: "kpi"|"trend"|"yoy"|"kumulatif"|"isi"|"mevsim"|"top"|"pay"|"karsilastir"|"pareto"|"dagilim"|"ozel";
-  parametreler: { donem: boolean; n?: boolean; kirilim?: boolean };   // hangi seçiciler gösterilecek
+  parametreler: {                       // hangi seçiciler gösterilecek (yalnız işe yarayanlar true)
+    donem: boolean;                     // false → rapor dönem kullanmaz (anlık bakiye / sabit pencere); yanıtta donem: null
+    kirilim: boolean;                   // gün/hafta/ay/çeyrek/yıl seçilebilir
+    n: boolean;                         // "ilk N" satır seçilebilir
+    nVarsayilan: number | null;         // n gönderilmezse uygulanan (ör. sıralama 10, pareto 30, tablolar 100)
+    nSecenekler: number[] | null;       // seçicide gösterilecek değerler (ör. [5,10,20,50] · [25,50,100,250,500])
+  };
 };
 type SonucTuru = "kpi" | "seri" | "kategori" | "matris" | "tablo" | "coklu" | "saglik" | "buyume" | "durum" | "projeksiyon";
 type GrafikTuru = "sayi" | "cizgi" | "alan" | "sutun" | "cubuk" | "pasta" | "agac" | "isi" | "pareto" | "karsilastir"
@@ -189,7 +215,8 @@ type GrafikTuru = "sayi" | "cizgi" | "alan" | "sutun" | "cubuk" | "pasta" | "aga
 ```jsonc
 {
   "rapor": { "id", "ad", "kisa", "ikon", "kategori", "birim", "iyi", "aciklama", "grafik", "grafikler" },
-  "donem": { "kod": "son12", "ad": "Son 12 ay", "bas": "2025-09-01", "bit": "2026-09-24", "gun": 389 },
+  "donem": { "kod": "son12", "ad": "Son 12 ay", "bas": "2025-09-01", "bit": "2026-09-24", "gun": 389 },   // dönemsiz raporda null
+  "n": 10,                                                // yalnız parametreler.n raporlarında: uygulanan satır sayısı
   "sonuc": Sonuc,
   "veriSurumu": 12
 }
@@ -243,6 +270,8 @@ type GrafikTuru = "sayi" | "cizgi" | "alan" | "sutun" | "cubuk" | "pasta" | "aga
   "satirlar": [ { "vade": "2026-10-02", "tutar": 4804.81, "...": "..." } ], "toplam": { "tutar": 9872454.27 }, "baslik": "..." }
 ```
 Kolon `tip`: `metin | sayi | tl | yuzde (kesir) | yuzdeSayi (zaten yüzde) | tarih | etiket (rozet)`.
+"İlk N" uygulanan tablolarda `adet` = kısaltılmadan önceki toplam satır sayısı ("100 / 431 gösteriliyor"); `toplam` tüm satırların toplamıdır.
+`n` sayısı rapordaki satır sayısıdır (çarpan yok); `n` 3–500 aralığına kırpılır.
 
 **coklu** — birden çok parça (üstte grafik, altta tablo gibi)
 ```json

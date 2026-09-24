@@ -214,7 +214,13 @@ test("veri uçları: meta, durum, katalog, rapor, cari detayı, uyarılar", asyn
 
   const kat = (await c.get("/api/raporlar")).data;
   assert.equal(kat.raporlar.length, meta.raporSayisi);
-  assert.ok(kat.raporlar.every((r) => r.id && r.ikon && r.parametreler));
+  assert.ok(kat.raporlar.every((r) => r.id && r.ikon && r.parametreler && ["yukari", "asagi", "notr"].includes(r.iyi)));
+  const borclu = kat.raporlar.find((r) => r.id === "ozel.borclu_musteriler");
+  assert.deepEqual(borclu.parametreler, { donem: false, kirilim: false, n: true, nVarsayilan: 100, nSecenekler: [25, 50, 100, 250, 500] });
+  assert.equal(kat.raporlar.find((r) => r.id === "satis.top.cari").parametreler.nVarsayilan, 10);
+  const kasa = await c.get("/api/rapor/ozel.kasa_durumu");
+  assert.equal(kasa.data.donem, null);
+  assert.equal(kasa.data.rapor.iyi, "yukari");
 
   const top = await c.get("/api/rapor/satis.top.cari?donem=son12&n=5");
   assert.equal(top.status, 200, JSON.stringify(top.data));
@@ -238,6 +244,8 @@ test("veri uçları: meta, durum, katalog, rapor, cari detayı, uyarılar", asyn
   const u = await c.get("/api/uyarilar");
   assert.equal(u.status, 200);
   assert.equal(u.data.uyarilar.length, u.data.ozet.kritik + u.data.ozet.uyari + u.data.ozet.bilgi);
+  assert.deepEqual((await c.get("/api/surum")).data.uyariOzet, u.data.ozet);
+  assert.deepEqual(d.data.uyariOzet, u.data.ozet);
 
   // firma=hepsi ve belirli firma filtresi
   assert.equal((await c.get("/api/rapor/net_ciro.kpi?firma=hepsi")).status, 200);
@@ -299,6 +307,12 @@ test("şifre değişince eski oturumlar düşer; çıkış çerezi siler", async
   await a.login("alfa.izleyici", "yeni1234");
   const t = await a.put("/api/auth/tercihler", { tema: "koyu", firmalar: ["0101", "kotu"], zararli: "<script>" });
   assert.deepEqual(t.data.tercihler, { tema: "koyu", firmalar: ["0101"] });
+  // "Tümü (kapananlar dahil)" ve özel tarih aralığı saklanır; geçersizler yok sayılır
+  const t2 = await a.put("/api/auth/tercihler", { firmalar: ["hepsi", "0101"], donem: "ozel", donemBas: "2026-01-01", donemBit: "2026-03-31" });
+  assert.deepEqual(t2.data.tercihler, { tema: "koyu", firmalar: ["hepsi"], donem: "ozel", donemBas: "2026-01-01", donemBit: "2026-03-31" });
+  const t3 = await a.put("/api/auth/tercihler", { donem: "uydurma", donemBas: "2026-02-31", donemBit: null });
+  assert.deepEqual(t3.data.tercihler, { tema: "koyu", firmalar: ["hepsi"], donem: "ozel", donemBas: "2026-01-01", donemBit: null });
+  assert.deepEqual((await a.get("/api/auth/ben")).data.kullanici.tercihler.firmalar, ["hepsi"]);
 });
 
 test("sistem yöneticisi: firma seçmeden veri yok; görünüm geçişi", async () => {
@@ -427,6 +441,36 @@ test("köprü protokolü HTTP üzerinden: kimlik, ping isteği, gzip + çok par�
 
   // Kiracı yalıtımı: beta'nın verisi alfa'ya karışmaz
   assert.equal(S.tenants.get(S.alfa).db.value("SELECT COUNT(*) FROM firma WHERE ad = 'BETA MERKEZ'"), 0);
+});
+
+test("köprü susunca 'veriler güncel değil' uyarısı sürüm değişmeden çıkar; demo firmada çıkmaz", async () => {
+  const u = client();
+  await u.login("beta.yonetici", "beta123");
+  const v0 = (await u.get("/api/surum")).data.veriSurumu;
+  const ids = async () => (await u.get("/api/uyarilar")).data.uyarilar.filter((a) => a.id === "veri_eski");
+  assert.deepEqual(await ids(), []);
+  const once = (dk) => S.registry.db.run("UPDATE sync_log SET finished_at = ? WHERE tenant_id = ?", new Date(Date.now() - dk * 60000).toISOString(), S.beta.id);
+  once(90);
+  let v = await ids();
+  assert.equal(v.length, 1);
+  assert.equal(v[0].seviye, "uyari");
+  assert.match(v[0].mesaj, /90 dakika/);
+  once(5 * 60);
+  v = await ids();
+  assert.equal(v[0].seviye, "kritik");
+  assert.match(v[0].mesaj, /5 saat/);
+  const d = (await u.get("/api/durum")).data;
+  assert.equal(d.uyarilar[0].id, "veri_eski");
+  assert.ok(d.uyariOzet.kritik >= 1);
+  const sv = (await u.get("/api/surum")).data;
+  assert.equal(sv.veriSurumu, v0); // yeni veri yok, sürüm aynı
+  assert.equal(sv.uyariOzet.kritik, d.uyariOzet.kritik);
+  once(1);
+  // Demo firma (alfa): köprü yok, eski eşitleme zamanı uyarı üretmez
+  S.tenants.get(S.alfa).setMeta("lastSync", new Date(Date.now() - 10 * 3600000).toISOString());
+  const a = client();
+  await a.login("alfa.yonetici", "alfa123");
+  assert.ok((await a.get("/api/uyarilar")).data.uyarilar.every((x) => x.id !== "veri_eski"));
 });
 
 test("köprü gövde sınırı: büyük istek 413", async () => {

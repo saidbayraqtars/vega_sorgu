@@ -15,6 +15,7 @@ const TL = (v) => `${Math.round(Number(v) || 0).toLocaleString("tr-TR")} ₺`;
 const PCT = (v, d = 0) => `%${(Math.abs(v) * 100).toLocaleString("tr-TR", { maximumFractionDigits: d })}`;
 const SIRA = { kritik: 0, uyari: 1, bilgi: 2 };
 
+// eslint-disable-next-line no-unused-vars
 function alerts(ctx, { kurlar = null, sonEsitleme = null } = {}) {
   return ctx.cached("alerts", () => {
     const out = [];
@@ -26,12 +27,7 @@ function alerts(ctx, { kurlar = null, sonEsitleme = null } = {}) {
     const pr = projection(ctx, { kurlar });
     const pf = pos.portfoy;
 
-    // ── Sistem ──
-    if (sonEsitleme) {
-      const dk = (Date.now() - new Date(sonEsitleme).getTime()) / 60000;
-      if (dk > 60) add({ id: "veri_eski", seviye: dk > 180 ? "kritik" : "uyari", ikon: "WifiOff", baslik: "Veriler güncel değil",
-        mesaj: `Son eşitleme ${Math.round(dk)} dakika önce. Köprü programı çalışıyor mu?`, rapor: null });
-    }
+    // (Köprü sessizliği uyarısı burada değil: staleAlert — önbelleğe girmez, istek anında eklenir.)
 
     // ── Nakit ──
     for (const k of pos.kasa.kasalar) {
@@ -154,4 +150,23 @@ function alerts(ctx, { kurlar = null, sonEsitleme = null } = {}) {
   });
 }
 
-module.exports = { alerts };
+// "Veriler güncel değil": köprü sessizken yeni veri sürümü gelmez, sonuç önbelleği de yenilenmez.
+// Bu yüzden bu uyarı önbelleklenmiş listeye her istekte ayrıca eklenir (withStale).
+function sureMetni(dk) {
+  if (dk < 120) return `${Math.round(dk)} dakika`;
+  if (dk < 48 * 60) return `${Math.round(dk / 60)} saat`;
+  return `${Math.round(dk / 1440)} gün`;
+}
+function staleAlert(sonEsitleme, now = Date.now()) {
+  if (!sonEsitleme) return null;
+  const dk = (now - new Date(sonEsitleme).getTime()) / 60000;
+  if (!(dk > 60)) return null;
+  return { id: "veri_eski", seviye: dk > 180 ? "kritik" : "uyari", ikon: "WifiOff", baslik: "Veriler güncel değil",
+    mesaj: `Son eşitleme ${sureMetni(dk)} önce. Köprü programı çalışıyor mu?`, deger: Math.round(dk), rapor: null };
+}
+function withStale(list, sonEsitleme, now = Date.now()) {
+  const a = staleAlert(sonEsitleme, now);
+  return a ? [a, ...list].sort((x, y) => SIRA[x.seviye] - SIRA[y.seviye]) : list;
+}
+
+module.exports = { alerts, staleAlert, withStale };

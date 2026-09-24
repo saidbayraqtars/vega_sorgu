@@ -44,7 +44,12 @@ function startOfQuarter(d) { const p = parse(d); return fmt(p.y, (quarter(d) - 1
 function endOfQuarter(d) { return endOfMonth(addMonths(startOfQuarter(d), 2)); }
 function minDate(a, b) { return a <= b ? a : b; }
 function maxDate(a, b) { return a >= b ? a : b; }
-function isDate(s) { return typeof s === "string" && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(toUTC(s)); }
+// Geçerli takvim günü mü? (2026-02-31 gibi taşan tarihler reddedilir)
+function isDate(s) {
+  if (typeof s !== "string" || !/^\d{4}-\d{2}-\d{2}$/.test(s)) return false;
+  const t = toUTC(s);
+  return !Number.isNaN(t) && new Date(t).toISOString().slice(0, 10) === s;
+}
 
 // ─── Hazır dönemler ────────────────────────────────────────────────────────
 const PRESETS = {

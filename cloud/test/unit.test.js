@@ -118,3 +118,27 @@ test("TCMB XML ayrıştırma", () => {
   assert.ok(Math.abs(r.kurlar.JPY - 0.281) < 1e-9);
   assert.equal(r.tarih, "24.09.2026");
 });
+
+test("köprü sessizliği uyarısı: süre metni ve seviye", () => {
+  const { staleAlert, withStale } = require("../src/engine/alerts");
+  const t0 = Date.parse("2026-09-24T12:00:00Z");
+  const iso = (dk) => new Date(t0 - dk * 60000).toISOString();
+  assert.equal(staleAlert(null, t0), null);
+  assert.equal(staleAlert(iso(30), t0), null);
+  assert.equal(staleAlert(iso(90), t0).seviye, "uyari");
+  assert.match(staleAlert(iso(90), t0).mesaj, /90 dakika/);
+  assert.equal(staleAlert(iso(200), t0).seviye, "kritik");
+  assert.match(staleAlert(iso(200), t0).mesaj, /3 saat/);
+  assert.match(staleAlert(iso(3 * 1440), t0).mesaj, /3 gün/);
+  const list = [{ id: "a", seviye: "kritik" }, { id: "b", seviye: "bilgi" }];
+  assert.deepEqual(withStale(list, iso(90), t0).map((x) => x.id), ["a", "veri_eski", "b"]);
+  assert.deepEqual(withStale(list, iso(300), t0).map((x) => x.id), ["veri_eski", "a", "b"]);
+  assert.equal(withStale(list, iso(5), t0), list);
+});
+
+test("tarih doğrulaması taşan günleri reddeder", () => {
+  assert.equal(P.isDate("2024-02-29"), true);
+  assert.equal(P.isDate("2026-02-29"), false);
+  assert.equal(P.isDate("2026-04-31"), false);
+  assert.equal(P.isDate("2026-13-01"), false);
+});

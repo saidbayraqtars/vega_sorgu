@@ -51,7 +51,7 @@ function validateWidgets(list) {
       }
     }
     if (w.kirilim) { if (!P.GRANS[w.kirilim]) throw new HttpError(400, `Geçersiz kırılım: ${w.kirilim}`); out.kirilim = w.kirilim; }
-    if (w.n !== undefined && w.n !== null) out.n = Math.min(100, Math.max(3, Number(w.n) || 10));
+    if (w.n !== undefined && w.n !== null) out.n = Math.min(CAT.N_MAX, Math.max(3, Number(w.n) || rep.n || 10));
     if (w.baslik) out.baslik = String(w.baslik).slice(0, 60);
     return out;
   });

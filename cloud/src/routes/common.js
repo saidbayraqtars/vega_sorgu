@@ -10,6 +10,14 @@ function activeFirmas(store, today) {
   return store.db.all("SELECT DISTINCT firma FROM cari_hareket WHERE tarih >= ? AND tarih <= ?", since, today).map((r) => r.firma);
 }
 
+// Aktif firmalar sorgusu büyük firmalarda pahalı olabilir: veri sürümü + gün başına bir kez
+function cachedActiveFirmas(deps, tenant, store, today) {
+  return deps.tenants.cached(tenant.id, store.dataVersion(), `aktifFirmalar|${today}`, () => activeFirmas(store, today));
+}
+
+// /uyarilar ve /surum'un paylaştığı önbellek anahtarı (ısıtma da aynısını kullanır)
+function alertKey(firma, today) { return `uyarilar|firma=${firma || ""}|${today}`; }
+
 function parseFirmaParam(v) {
   if (!v) return null;
   const list = String(v).split(",").map((s) => s.trim()).filter((s) => /^\d{4}$/.test(s));
@@ -23,7 +31,7 @@ function contextFor(deps, req) {
   const today = P.todayTR();
   let firmalar = parseFirmaParam(req.query.firma);
   if (!firmalar && req.query.firma !== "hepsi") {
-    const act = activeFirmas(store, today);
+    const act = cachedActiveFirmas(deps, req.tenant, store, today);
     firmalar = act.length ? act : null;
   }
   const ctx = new Context(store, req.tenant.settings, { firmalar, today });
@@ -53,4 +61,4 @@ function wrap(fn) {
 
 function bad(msg) { return new HttpError(400, msg); }
 
-module.exports = { contextFor, cacheKey, lastSyncOf, wrap, bad, activeFirmas, parseFirmaParam };
+module.exports = { contextFor, cacheKey, lastSyncOf, wrap, bad, activeFirmas, cachedActiveFirmas, alertKey, parseFirmaParam };

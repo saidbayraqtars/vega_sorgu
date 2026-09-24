@@ -8,7 +8,8 @@ const log = require("./log");
 const { overview } = require("./engine/overview");
 const { Context } = require("./engine/context");
 const P = require("./engine/period");
-const { activeFirmas } = require("./routes/common");
+const { activeFirmas, alertKey } = require("./routes/common");
+const { alerts } = require("./engine/alerts");
 const pkg = require("../package.json");
 
 function createApp(deps) {
@@ -38,8 +39,11 @@ function createApp(deps) {
     const ctx = new Context(store, tenant.settings, { firmalar: act.length ? act : null, today });
     const k = deps.fx && deps.fx.current();
     ctx.kurlar = k ? k.kurlar : null;
-    const key = `/durum?|${today}`;
-    deps.tenants.cached(tenant.id, store.dataVersion(), key, () => overview(ctx, { kurlar: ctx.kurlar, sonEsitleme: store.getMeta("lastSync", null) }));
+    const sonEsitleme = store.getMeta("lastSync", null);
+    const v = store.dataVersion();
+    deps.tenants.cached(tenant.id, v, `/durum?|${today}`, () => overview(ctx, { kurlar: ctx.kurlar, sonEsitleme }));
+    // Uyarı sayıları (/surum her 60 sn'de ister): durum hesabının ara sonuçlarından, ek maliyetsiz
+    deps.tenants.cached(tenant.id, v, alertKey("", today), () => alerts(ctx, { kurlar: ctx.kurlar, sonEsitleme }));
   });
 
   app.get("/api/saglik", (req, res) => res.json({ tamam: true, surum: pkg.version, zaman: new Date().toISOString() }));

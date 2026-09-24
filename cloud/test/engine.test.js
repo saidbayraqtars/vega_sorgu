@@ -13,6 +13,7 @@ const { healthScore } = require("../src/engine/health");
 const { projection } = require("../src/engine/cashflow");
 const { alerts } = require("../src/engine/alerts");
 const { overview } = require("../src/engine/overview");
+const { ratios } = require("../src/engine/ratios");
 
 const close = (a, b, eps = 0.01) => Math.abs(a - b) <= eps * Math.max(1, Math.abs(a), Math.abs(b)) / 100;
 
@@ -148,6 +149,25 @@ test("sağlık skoru: 0-100, not tutarlı, açıklamalı", () => {
     assert.equal(typeof m.aciklama, "string");
   }
   assert.ok(h.olumlu.length + h.olumsuz.length > 0);
+});
+
+test("sağlık ölçütleri API birim kuralına uyar: % → yüzde sayısı, puan → yüzde puanı", () => {
+  const c = ctx(demoStore());
+  const h = healthScore(c);
+  const r = ratios(c);
+  const g = growthAnalysis(c);
+  const m = Object.fromEntries(h.sutunlar.flatMap((s) => s.olcutler).map((x) => [x.id, x]));
+  assert.ok(Math.abs(m.brut_marj.deger - r.marj) < 1e-9, "marj yüzde sayısı");
+  assert.ok(Math.abs(m.tahsilat_orani.deger - r.tahsilatOrani90) < 1e-9);
+  assert.ok(Math.abs(m.vadesi_gecen.deger - r.vadesiGecenOran * 100) < 1e-9);
+  assert.ok(Math.abs(m.yogunlasma.deger - r.ilk5Pay * 100) < 1e-9);
+  assert.equal(m.marj_trend.birim, "puan");
+  assert.ok(Math.abs(m.marj_trend.deger - r.marjTrend) < 1e-9);
+  assert.ok(g.ivme, "demo veride ivme hesaplanır");
+  assert.equal(m.ivme.birim, "puan");
+  assert.ok(Math.abs(m.ivme.deger - g.ivme.deger * 100) < 1e-9, "ivme yüzde puanı");
+  // olumlu/olumsuz listeleri aynı nesnelerden gelir
+  for (const x of [...h.olumlu, ...h.olumsuz]) assert.equal(x.deger, m[x.id].deger);
 });
 
 test("nakit projeksiyonu ve uyarılar", () => {

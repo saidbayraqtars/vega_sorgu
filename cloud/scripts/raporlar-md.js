@@ -60,8 +60,11 @@ L.push(`## Boyutlar (${Object.keys(DIMENSIONS).length})`, "", "| Boyut | Simge |
 for (const [id, d] of Object.entries(DIMENSIONS)) L.push(`| ${d.ad} \`${id}\` | \`${d.ikon}\` |`);
 L.push("");
 
-L.push(`## Özel analizler (${list.filter((r) => r.ozel).length})`, "", "| Rapor | Kimlik | Sonuç | Açıklama |", "|---|---|---|---|");
-for (const r of list.filter((x) => x.ozel)) L.push(`| **${esc(r.ad)}** | \`${r.id}\` | ${TUR[r.tur] || r.tur} | ${esc(r.aciklama)} |`);
+L.push(`## Özel analizler (${list.filter((r) => r.ozel).length})`, "", "Dönem sütunu: *anlık* = dönem seçimi uygulanmaz (güncel bakiye ya da sabit pencere). İlk N: varsayılan satır sayısı.", "",
+  "| Rapor | Kimlik | Sonuç | Dönem | İlk N | Açıklama |", "|---|---|---|---|---:|---|");
+for (const r of list.filter((x) => x.ozel)) {
+  L.push(`| **${esc(r.ad)}** | \`${r.id}\` | ${TUR[r.tur] || r.tur} | ${r.donemsiz ? "anlık" : DONEM[r.donem] || r.donem} | ${r.n || "—"} | ${esc(r.aciklama)} |`);
+}
 L.push("");
 
 L.push("## Tüm raporlar", "");
@@ -69,7 +72,7 @@ for (const k of CAT.KATEGORILER) {
   const rs = list.filter((r) => r.kategori === k.id);
   if (!rs.length) continue;
   L.push(`<details><summary><b>${k.ad}</b> — ${n(rs.length)} rapor</summary>`, "", "| Rapor | Kimlik | Sonuç | Varsayılan dönem | Grafikler |", "|---|---|---|---|---|");
-  for (const r of rs) L.push(`| ${esc(r.ad)} | \`${r.id}\` | ${TUR[r.tur] || r.tur} | ${DONEM[r.donem] || r.donem || "—"} | ${r.grafikler.join(", ")} |`);
+  for (const r of rs) L.push(`| ${esc(r.ad)} | \`${r.id}\` | ${TUR[r.tur] || r.tur} | ${r.donemsiz ? "— (anlık)" : DONEM[r.donem] || r.donem || "—"} | ${r.grafikler.join(", ")} |`);
   L.push("", "</details>", "");
 }
 

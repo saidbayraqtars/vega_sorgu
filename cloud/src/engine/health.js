@@ -27,9 +27,12 @@ const GRADES = [
 ];
 function grade(score) { return GRADES.find((g) => score >= g.min) || GRADES[GRADES.length - 1]; }
 
+// Puanlama "%" ölçütlerde kesirle (0.30), "puan" ölçütlerde yüzde puanıyla (−9.3) yapılır.
+// Dışarı verilen değer API'nin genel birim kuralına uyar: "%" → yüzde sayısı (29.96), "puan" → yüzde puanı.
 function metric(id, ad, ikon, deger, birim, anchors, aciklama, ideal) {
-  const skor = deger === null || deger === undefined || !Number.isFinite(deger) ? null : S.clamp(S.scorePiecewise(deger, anchors), 0, 100);
-  return { id, ad, ikon, deger, birim, skor, aciklama, ideal };
+  const var_ = deger !== null && deger !== undefined && Number.isFinite(deger);
+  const skor = var_ ? S.clamp(S.scorePiecewise(deger, anchors), 0, 100) : null;
+  return { id, ad, ikon, deger: var_ ? (birim === "%" ? deger * 100 : deger) : null, birim, skor, aciklama, ideal };
 }
 
 function healthScore(ctx, opts = {}) {
@@ -75,7 +78,7 @@ function healthScore(ctx, opts = {}) {
           metric("musteri_buyume", "Müşteri tabanı", "Users", (g.bilesenler.find((b) => b.id === "musteri") || {}).yuzde ?? null, "%",
             [[-0.3, 0], [-0.1, 30], [0, 50], [0.1, 75], [0.25, 100]],
             `Aktif müşteri sayısı ${fmtPct((g.bilesenler.find((b) => b.id === "musteri") || {}).yuzde ?? null, 0)} değişti.`, "> %0"),
-          metric("ivme", "İvme", "Gauge", g.ivme ? g.ivme.deger : null, "puan", [[-0.2, 0], [-0.05, 40], [0, 55], [0.05, 75], [0.2, 100]],
+          metric("ivme", "İvme", "Gauge", g.ivme ? g.ivme.deger * 100 : null, "puan", [[-20, 0], [-5, 40], [0, 55], [5, 75], [20, 100]],
             g.ivme ? `Son 90 günün yıllık büyümesi genel eğilime göre ${g.ivme.deger >= 0 ? "+" : ""}${fmtNum(g.ivme.deger * 100, 1)} puan.` : "İvme için yeterli geçmiş yok.", "≥ 0"),
         ],
       },

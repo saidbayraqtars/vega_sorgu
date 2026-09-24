@@ -2,11 +2,11 @@
 
 const express = require("express");
 const { requireTenant, HttpError } = require("../auth");
-const { contextFor, cacheKey, lastSyncOf, wrap, activeFirmas } = require("./common");
+const { contextFor, cacheKey, lastSyncOf, wrap, cachedActiveFirmas, alertKey } = require("./common");
 const P = require("../engine/period");
 const Q = require("../engine/query");
 const { overview } = require("../engine/overview");
-const { alerts } = require("../engine/alerts");
+const { alerts, withStale } = require("../engine/alerts");
 const CAT = require("../engine/catalog");
 const { SEKTORLER } = require("../engine/settings");
 const { IZAHAT_AD } = require("../engine/special");
@@ -34,7 +34,7 @@ module.exports = function dataRoutes(deps) {
   r.get("/meta", wrap((req, res) => {
     const store = tenants.get(req.tenant);
     const today = P.todayTR();
-    const aktif = new Set(activeFirmas(store, today));
+    const aktif = new Set(cachedActiveFirmas(deps, req.tenant, store, today));
     const firmalar = store.db.all("SELECT firma, ad, unvan FROM firma ORDER BY firma").map((f) => ({ kod: f.firma, ad: f.ad || f.unvan || f.firma, unvan: f.unvan, aktif: aktif.has(f.firma) }));
     res.json({
       firma: { id: req.tenant.id, kod: req.tenant.slug, ad: req.tenant.ad },
@@ -51,7 +51,20 @@ module.exports = function dataRoutes(deps) {
     });
   }));
 
-  // Hafif yoklama (arayüz 60 sn'de bir çağırır; sürüm değişince yeniden yükler)
+  // Uyarı listesi — /uyarilar ve /surum aynı önbellek kaydını paylaşır (firma seçimine göre)
+  const alertList = (req) => {
+    const { ctx, store, today } = contextFor(deps, req);
+    const sonEsitleme = lastSyncOf(deps, req.tenant, store);
+    return tenants.cached(req.tenant.id, store.dataVersion(), alertKey(req.query.firma, today), () => alerts(ctx, { kurlar: ctx.kurlar, sonEsitleme }));
+  };
+  // Demo firmalarda köprü yok: "veri eski" uyarısı anlamsız
+  const sonEsitlemeUyari = (req, store) => (store.getMeta("demo", false) ? null : lastSyncOf(deps, req.tenant, store));
+  const guncelUyarilar = (req) => withStale(alertList(req), sonEsitlemeUyari(req, tenants.get(req.tenant)));
+  const ozetle = (list) => ({
+    kritik: list.filter((a) => a.seviye === "kritik").length, uyari: list.filter((a) => a.seviye === "uyari").length, bilgi: list.filter((a) => a.seviye === "bilgi").length,
+  });
+
+  // Hafif yoklama (arayüz 60 sn'de bir çağırır; sürüm değişince yeniden yükler). Uyarı sayıları önbellekten gelir.
   r.get("/surum", wrap((req, res) => {
     const store = tenants.get(req.tenant);
     res.json({
@@ -59,6 +72,7 @@ module.exports = function dataRoutes(deps) {
       esitleniyor: !!tenants.busy.get(req.tenant.id),
       bekleyenIstek: registry.pendingSyncRequest(req.tenant.id),
       kopru: bridgeState(registry, req.tenant, store),
+      uyariOzet: ozetle(guncelUyarilar(req)),
     });
   }));
 
@@ -72,28 +86,21 @@ module.exports = function dataRoutes(deps) {
     const { ctx, store, today } = contextFor(deps, req);
     const sonEsitleme = lastSyncOf(deps, req.tenant, store);
     const out = tenants.cached(req.tenant.id, store.dataVersion(), cacheKey(req, `|${today}`), () => overview(ctx, { kurlar: ctx.kurlar, sonEsitleme }));
-    res.json({ ...out, kopru: bridgeState(registry, req.tenant, store), veriSurumu: store.dataVersion(), kurlar: deps.fx && deps.fx.current() });
+    const uyarilar = withStale(out.uyarilar, sonEsitlemeUyari(req, store));
+    res.json({ ...out, uyarilar, uyariOzet: ozetle(uyarilar), kopru: bridgeState(registry, req.tenant, store), veriSurumu: store.dataVersion(), kurlar: deps.fx && deps.fx.current() });
   }));
 
   r.get("/uyarilar", wrap((req, res) => {
-    const { ctx, store, today } = contextFor(deps, req);
-    const sonEsitleme = lastSyncOf(deps, req.tenant, store);
-    const list = tenants.cached(req.tenant.id, store.dataVersion(), cacheKey(req, `|${today}`), () => alerts(ctx, { kurlar: ctx.kurlar, sonEsitleme }));
-    res.json({ uyarilar: list, ozet: {
-      kritik: list.filter((a) => a.seviye === "kritik").length, uyari: list.filter((a) => a.seviye === "uyari").length, bilgi: list.filter((a) => a.seviye === "bilgi").length,
-    } });
+    const list = guncelUyarilar(req);
+    res.json({ uyarilar: list, ozet: ozetle(list) });
   }));
 
   // Katalog (arama/filtre istemcide yapılır — ~1000 kayıt, ~200 KB)
   r.get("/raporlar", wrap((req, res) => {
     const list = CAT.catalog().map((x) => ({
       id: x.id, ad: x.ad, kisa: x.kisa, ikon: x.ikon, kategori: x.kategori, tur: x.tur, grafik: x.grafik, grafikler: x.grafikler,
-      donem: x.donem, birim: x.birim, aciklama: x.aciklama, olcu: x.olcu || null, boyut: x.boyut || null, gorunum: x.gorunum || "ozel",
-      parametreler: {
-        donem: !["ozel.saglik", "ozel.buyume", "ozel.finansal_durum", "ozel.nakit_projeksiyonu", "ozel.uyarilar", "ozel.oranlar"].includes(x.id),
-        n: ["top", "pay", "karsilastir", "pareto"].includes(x.gorunum) || (x.ozel && x.tur !== "saglik"),
-        kirilim: x.gorunum === "trend" || x.gorunum === "yoy",
-      },
+      donem: x.donem, birim: x.birim, iyi: x.iyi || "notr", aciklama: x.aciklama, olcu: x.olcu || null, boyut: x.boyut || null, gorunum: x.gorunum || "ozel",
+      parametreler: x.parametreler,
     }));
     res.set("Cache-Control", "private, max-age=300");
     res.json({ kategoriler: CAT.KATEGORILER, raporlar: list });

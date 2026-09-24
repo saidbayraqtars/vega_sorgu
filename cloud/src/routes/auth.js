@@ -3,6 +3,7 @@
 const express = require("express");
 const { setSessionCookie, clearSessionCookie, HttpError, LoginLimiter, requireUser } = require("../auth");
 const { wrap } = require("./common");
+const P = require("../engine/period");
 
 function userView(registry, u, req) {
   const tenant = u.tenantId ? registry.tenant(u.tenantId) : null;
@@ -58,8 +59,13 @@ module.exports = function authRoutes(deps) {
     const prefs = req.body && typeof req.body === "object" ? req.body : {};
     const clean = {};
     if (["acik", "koyu", "sistem"].includes(prefs.tema)) clean.tema = prefs.tema;
-    if (typeof prefs.donem === "string" && prefs.donem.length < 20) clean.donem = prefs.donem;
-    if (Array.isArray(prefs.firmalar)) clean.firmalar = prefs.firmalar.filter((f) => /^\d{4}$/.test(f)).slice(0, 50);
+    if (typeof prefs.donem === "string" && (P.PRESETS[prefs.donem] || prefs.donem === "ozel")) clean.donem = prefs.donem;
+    // Özel dönem aralığı (donem = "ozel" iken kullanılır); null → temizle
+    for (const k of ["donemBas", "donemBit"]) if (prefs[k] === null || P.isDate(prefs[k])) clean[k] = prefs[k];
+    // ["hepsi"] = kapanmış firmalar dahil tümü; [] = etkin firmalar (varsayılan)
+    if (Array.isArray(prefs.firmalar)) {
+      clean.firmalar = prefs.firmalar.includes("hepsi") ? ["hepsi"] : prefs.firmalar.filter((f) => /^\d{4}$/.test(f)).slice(0, 50);
+    }
     if (typeof prefs.anaPano === "number") clean.anaPano = prefs.anaPano;
     const u = registry.updateUser(req.user.id, { prefs: clean });
     res.json({ tercihler: u.prefs });
