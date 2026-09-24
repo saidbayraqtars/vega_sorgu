@@ -5,11 +5,7 @@
 **/*.db-wal
 **/*.db-shm
 **/*.log
-VegaSorgu.exe
-VegaSorgu.rar
 dist
-client
-server
 electron
 bridge
 görseller

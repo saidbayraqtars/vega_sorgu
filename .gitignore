@@ -2,20 +2,15 @@
 node_modules/
 
 # Build çıktıları
-client/dist/
-server/public/
 dist/
 
 # Çalışma zamanı / hassas
 config.json
 *.log
 
-# Paketlenmiş çıktı
-VegaSorgu.exe
-
-# Geçici / debug scriptleri
-server/_*.js
-server/kasa_columns.txt
+# Paketlenmiş ikili dosyalar (kurulumlar GitHub Releases'a yüklenir, depoya girmez)
+*.exe
+*.rar
 
 # OS
 .DS_Store

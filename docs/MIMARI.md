@@ -29,7 +29,8 @@
 | `web/` | Panel arayüzü: durum, panolar (sürükle-bırak), 1.085 raporluk katalog, uyarılar, ayarlar, yönetim; sözleşme [API.md](API.md) | Vite, React 19, TypeScript, Tailwind 4, ECharts 6 |
 | `deploy/` | Dockerfile, docker-compose + Caddy, systemd birimi, yedek betiği | |
 
-Eski masaüstü sürümü (`server/`, `client/`, `VegaSorgu.exe`) yeni sistemde kullanılmaz.
+Eski masaüstü sürümü (yerel sunuculu Vega Sorgu v1.1.x: `server/`, `client/`, `VegaSorgu.exe`) depodan kaldırıldı;
+gerekirse git geçmişinde `ba35a0b` (release v1.1.5) commit'inde durur.
 
 ## Neden bu tasarım?
 
