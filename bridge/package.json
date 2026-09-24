@@ -10,7 +10,7 @@
   "scripts": {
     "start": "node src/cli.js calistir",
     "once": "node src/cli.js bir-kez",
-    "test": "node --test test/"
+    "test": "node --test \"test/*.test.js\""
   },
   "dependencies": {
     "mssql": "^11.0.1"

@@ -126,7 +126,7 @@ class TenantStore {
     const { ds, firma, donem } = parseChunkKey(key);
     const def = DATASETS[ds];
     if (!def) throw Object.assign(new Error(`Bilinmeyen veri kümesi: ${ds}`), { status: 400 });
-    validateDatasetRow(ds, cols);
+    try { validateDatasetRow(ds, cols); } catch (e) { throw Object.assign(e, { status: 400 }); }
     if (!Array.isArray(rows)) throw Object.assign(new Error("rows dizi olmalı"), { status: 400 });
     if (!last) {
       this.db.run(
@@ -154,6 +154,7 @@ class TenantStore {
          ON CONFLICT(key) DO UPDATE SET n=excluded.n, ck=excluded.ck, sm=excluded.sm, rows=excluded.rows, updated_at=excluded.updated_at`,
         key, ds, scopeKey(ds, firma, donem), Number(n) || 0, String(ck ?? ""), Number(sm) || 0, total, new Date().toISOString(),
       );
+      this.setMeta("degisti", true);
     });
     return { stored: total };
   }
@@ -206,9 +207,12 @@ class TenantStore {
       this.db.run("DELETE FROM stage WHERE at < ?", new Date(Date.now() - 86400000).toISOString());
       this.db.run("DELETE FROM sync_manifest WHERE at < ?", new Date(Date.now() - 86400000).toISOString());
     });
-    const version = this.bumpVersion();
+    // Sürüm yalnız veri gerçekten değiştiyse artar → arayüz boşuna yenilenmez, önbellek sıcak kalır
+    const changed = dropped > 0 || !!this.getMeta("degisti", false);
+    const version = changed ? this.bumpVersion() : this.dataVersion();
+    this.setMeta("degisti", false);
     this.setMeta("lastSync", new Date().toISOString());
-    return { dropped, dataVersion: version };
+    return { dropped, dataVersion: version, changed };
   }
 
   // Tüm veriyi sil (tam yeniden eşitleme / demo sıfırlama)

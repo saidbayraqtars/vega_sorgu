@@ -4,7 +4,7 @@
 //   2. keşif  — TBLFIRMA / TBLDONEM + gerekli tabloların kolonları (tek sorgu)
 //   3. manifest — her veri kümesi için ay/kova bazlı parmak izi (COUNT + CHECKSUM_AGG + SUM)
 //   4. sunucu yalnız değişen/yeni parçaları ister → parçalar gzip JSON olarak (≤ 20.000 satır/istek) gider
-//   5. commit — sunucu silinen parçaları temizler, veri sürümünü artırır
+//   5. commit — sunucu silinen parçaları temizler; veri değiştiyse sürümü artırır
 //  Güncel ve bir önceki yılın dönemleri her döngüde; eski dönemler `eskiDonemSaat` saatte bir taranır.
 //  Zamanlayıcı: aralikDk dakikada bir + 60 sn'de bir ping ("Şimdi güncelle" / "Tam eşitleme").
 // ═══════════════════════════════════════════════════════════════════════════

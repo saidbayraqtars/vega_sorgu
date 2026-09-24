@@ -9,7 +9,8 @@ const { bridgeState } = require("./data");
 module.exports = function adminRoutes(deps) {
   const { registry, tenants } = deps;
   const r = express.Router();
-  r.use(requireTenant, requireAdmin);
+  // Yalnız bu yönlendiricinin yollarında ("/api" altındaki diğer uçlara karışmasın)
+  r.use(["/ayarlar", "/kullanicilar", "/kopru"], requireTenant, requireAdmin);
 
   r.get("/ayarlar", wrap((req, res) => {
     res.json({ ayarlar: resolveSettings(req.tenant.settings), varsayilan: DEFAULTS,

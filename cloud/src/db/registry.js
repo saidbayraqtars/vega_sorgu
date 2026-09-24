@@ -101,7 +101,7 @@ class Registry {
     const next = {
       ad: ad !== undefined ? String(ad).trim() || t.ad : t.ad,
       settings: settings !== undefined ? { ...t.settings, ...settings } : t.settings,
-      aktif: aktif !== undefined ? (aktif ? 1 : 0) : t.aktif,
+      aktif: (aktif !== undefined ? aktif : t.aktif) ? 1 : 0,
     };
     this.db.run("UPDATE tenant SET ad = ?, settings = ?, aktif = ? WHERE id = ?", next.ad, JSON.stringify(next.settings), next.aktif, id);
     return this.tenant(id);

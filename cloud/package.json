@@ -9,7 +9,7 @@
   "scripts": {
     "start": "node --disable-warning=ExperimentalWarning src/index.js",
     "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
-    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 \"test/*.test.js\"",
     "demo": "node --disable-warning=ExperimentalWarning src/cli.js demo",
     "cli": "node --disable-warning=ExperimentalWarning src/cli.js"
   },

@@ -65,7 +65,7 @@ type KopruDurumu = {
 };
 ```
 
-`GET /api/surum` — **60 sn'de bir yoklayın**; `veriSurumu` değişince ekrandaki verileri yeniden çekin:
+`GET /api/surum` — **60 sn'de bir yoklayın**; `veriSurumu` değişince ekrandaki verileri yeniden çekin (sürüm yalnız eşitleme gerçekten veri değiştirdiğinde artar; son eşitleme zamanı için `kopru.sonEsitleme` kullanın):
 `{ veriSurumu: number, esitleniyor: boolean, bekleyenIstek: boolean, kopru: KopruDurumu }`
 
 `POST /api/guncelle` — "Şimdi güncelle" düğmesi. Köprü ≤ 60 sn içinde eşitler. `{ tamam, mesaj }`

@@ -37,7 +37,6 @@ class Sql {
     };
     if (!inst) config.port = Number(this.cfg.port) || 1433; // adlandırılmış örnekte port verilmez (§4.3)
     this.pool = await new (driver().ConnectionPool)(config).connect();
-    if (this.cfg.kirliOkuma) await this.pool.request().batch("SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED");
     return this.pool;
   }
 
@@ -56,7 +55,8 @@ class Sql {
       else if (typeof v === "number" && Number.isInteger(v)) req.input(k, driver().Int, v);
       else req.input(k, driver().NVarChar, v === null || v === undefined ? null : String(v));
     }
-    const r = await req.query(sql);
+    // Kirli okuma her sorguda ayarlanır: havuzdaki her bağlantı ayrı oturumdur
+    const r = await req.query(this.cfg.kirliOkuma ? `SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;\n${sql}` : sql);
     return r.recordset || [];
   }
 

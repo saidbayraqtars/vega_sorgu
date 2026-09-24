@@ -43,6 +43,11 @@ const GRAFIK = {
   pareto: ["pareto", "tablo"],
   matris: ["isi", "tablo"],
   tablo: ["tablo"],
+  coklu: ["coklu"],
+  saglik: ["gosterge"],
+  buyume: ["buyume"],
+  durum: ["bilanco", "tablo"],
+  projeksiyon: ["cizgi"],
 };
 
 function additive(m) { return !m.d && m.additive !== false && !m.combo; }
@@ -122,7 +127,8 @@ function resolveParams(ctx, rep, q = {}) {
   const donem = P.resolvePeriod(kod, { bas: q.bas, bit: q.bit, today: ctx.today, ilkTarih: ctx.firstDate() });
   let n = Number(q.n) || rep.n || 10;
   n = Math.min(100, Math.max(3, Math.round(n)));
-  return { donem, n, kirilim: q.kirilim && P.GRANS[q.kirilim] ? q.kirilim : null };
+  if (q.kirilim && !P.GRANS[q.kirilim]) throw err(`Geçersiz kırılım: ${q.kirilim}`);
+  return { donem, n, kirilim: q.kirilim || null };
 }
 
 function labeled(gran, pts) { return pts.map((p) => ({ k: p.k, ad: P.bucketLabel(gran, p.k), v: p.v })); }

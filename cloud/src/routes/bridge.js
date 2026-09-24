@@ -79,7 +79,7 @@ module.exports = function bridgeRoutes(deps) {
     tenants.busy.delete(req.tenant.id);
     tenants.invalidate(req.tenant.id);
     log.info("eşitleme tamam", { firma: req.tenant.slug, syncId, ...out });
-    res.json({ tamam: true, veriSurumu: out.dataVersion, silinen: out.dropped });
+    res.json({ tamam: true, veriSurumu: out.dataVersion, silinen: out.dropped, degisti: out.changed });
     // Durum ekranını arka planda ısıt (ilk kullanıcı beklemesin)
     if (deps.warm) setImmediate(() => { try { deps.warm(req.tenant); } catch (e) { log.warn("ısıtma hatası", { hata: e.message }); } });
   }));
