@@ -20,3 +20,11 @@ server/kasa_columns.txt
 # OS
 .DS_Store
 Thumbs.db
+
+# Vega Bulut (v2)
+cloud/data/
+web/dist/
+*.db
+*.db-wal
+*.db-shm
+bridge/config*.json

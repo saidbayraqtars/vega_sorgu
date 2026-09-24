@@ -1,0 +1,19 @@
+{
+  "name": "vega-bulut",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Vega Bulut — Arctos/Vega ERP verisini köprü ajanı ile alan, analiz eden ve sade arayüzle sunan çok kiracılı sunucu (VPS).",
+  "main": "src/index.js",
+  "license": "UNLICENSED",
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/index.js",
+    "dev": "node --disable-warning=ExperimentalWarning --watch src/index.js",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/",
+    "demo": "node --disable-warning=ExperimentalWarning src/cli.js demo",
+    "cli": "node --disable-warning=ExperimentalWarning src/cli.js"
+  },
+  "dependencies": {
+    "express": "^5.1.0"
+  }
+}
