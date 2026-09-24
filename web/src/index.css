@@ -1,0 +1,142 @@
+@import "tailwindcss";
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* Anlamsal renk belirteçleri: açık/koyu temada değişir */
+:root {
+  --zemin: #f4f6fb;
+  --kart: #ffffff;
+  --kart2: #f1f4f9;
+  --cizgi: #e2e7ef;
+  --yazi: #111827;
+  --soluk: #5b6474;
+  --marka: #4f46e5;
+  --marka-yumusak: #eef0ff;
+  --iyi: #15803d;
+  --iyi-zemin: #e7f6ec;
+  --orta: #b45309;
+  --orta-zemin: #fdf3e2;
+  --kotu: #c62828;
+  --kotu-zemin: #fdeaea;
+  --zayif: #c2410c;
+  --zayif-zemin: #fdeee4;
+  --notr: #6b7280;
+  --notr-zemin: #eef0f3;
+  --mor: #7c3aed;
+  --odak: #4f46e5;
+  --p0: #4f46e5;
+  --p1: #0284c7;
+  --p2: #d97706;
+  --p3: #059669;
+  --p4: #db2777;
+  --p5: #7c3aed;
+  --p6: #0d9488;
+  --p7: #ea580c;
+}
+
+.dark {
+  --zemin: #0b1020;
+  --kart: #141a2e;
+  --kart2: #1b2239;
+  --cizgi: #283152;
+  --yazi: #e7eaf3;
+  --soluk: #9aa3b8;
+  --marka: #8b93ff;
+  --marka-yumusak: #22285066;
+  --iyi: #4ade80;
+  --iyi-zemin: #14532d55;
+  --orta: #fbbf24;
+  --orta-zemin: #78350f55;
+  --kotu: #f87171;
+  --kotu-zemin: #7f1d1d55;
+  --zayif: #fb923c;
+  --zayif-zemin: #7c2d1255;
+  --notr: #9ca3af;
+  --notr-zemin: #37415155;
+  --mor: #c4b5fd;
+  --odak: #a5b4fc;
+  --p0: #8b93ff;
+  --p1: #38bdf8;
+  --p2: #fbbf24;
+  --p3: #34d399;
+  --p4: #f472b6;
+  --p5: #c4b5fd;
+  --p6: #2dd4bf;
+  --p7: #fb923c;
+}
+
+@theme inline {
+  --font-sans: "Inter Variable", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --color-zemin: var(--zemin);
+  --color-kart: var(--kart);
+  --color-kart2: var(--kart2);
+  --color-cizgi: var(--cizgi);
+  --color-yazi: var(--yazi);
+  --color-soluk: var(--soluk);
+  --color-marka: var(--marka);
+  --color-marka-yumusak: var(--marka-yumusak);
+  --color-iyi: var(--iyi);
+  --color-iyi-zemin: var(--iyi-zemin);
+  --color-orta: var(--orta);
+  --color-orta-zemin: var(--orta-zemin);
+  --color-kotu: var(--kotu);
+  --color-kotu-zemin: var(--kotu-zemin);
+  --color-zayif: var(--zayif);
+  --color-zayif-zemin: var(--zayif-zemin);
+  --color-notr: var(--notr);
+  --color-notr-zemin: var(--notr-zemin);
+  --color-mor: var(--mor);
+}
+
+html,
+body {
+  background: var(--zemin);
+  color: var(--yazi);
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  font-family: var(--font-sans);
+  font-feature-settings: "tnum" 1, "cv11" 1;
+  overflow-x: hidden;
+  min-height: 100dvh;
+}
+
+:focus-visible {
+  outline: 2px solid var(--odak);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.rakam {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+@keyframes parilti {
+  0% { background-position: -200px 0; }
+  100% { background-position: calc(200px + 100%) 0; }
+}
+
+.iskelet {
+  background: linear-gradient(90deg, var(--kart2) 0, var(--cizgi) 50%, var(--kart2) 100%);
+  background-size: 200px 100%;
+  background-repeat: no-repeat;
+  background-color: var(--kart2);
+  animation: parilti 1.3s ease-in-out infinite;
+  border-radius: 8px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .iskelet { animation: none; }
+  * { scroll-behavior: auto !important; }
+}
+
+.ince-kaydirma {
+  scrollbar-width: thin;
+  scrollbar-color: var(--cizgi) transparent;
+}
+
+.guvenli-alt {
+  padding-bottom: env(safe-area-inset-bottom);
+}
