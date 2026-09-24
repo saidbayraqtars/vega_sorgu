@@ -1,0 +1,18 @@
+{
+  "name": "vega-kopru",
+  "version": "2.0.0",
+  "private": true,
+  "description": "Vega Köprü — müşteri sunucusundaki Arctos/Vega (VEGADB) verisini salt-okunur okuyup 15 dakikada bir Vega Bulut'a eşitleyen ajan.",
+  "main": "src/sync.js",
+  "bin": { "vega-kopru": "src/cli.js" },
+  "license": "UNLICENSED",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "start": "node src/cli.js calistir",
+    "once": "node src/cli.js bir-kez",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "mssql": "^11.0.1"
+  }
+}
