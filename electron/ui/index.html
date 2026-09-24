@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Vega Köprü</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="ust">
+    <div class="marka"><span data-ikon="link" class="marka-ikon"></span><b>Vega Köprü</b></div>
+    <span class="surum" id="surum"></span>
+  </header>
+
+  <nav class="sekmeler" role="tablist">
+    <button role="tab" data-sekme="durum" class="secili"><span data-ikon="activity"></span>Durum</button>
+    <button role="tab" data-sekme="ayarlar"><span data-ikon="settings"></span>Ayarlar</button>
+    <button role="tab" data-sekme="gunluk"><span data-ikon="scroll-text"></span>Günlük</button>
+  </nav>
+
+  <main>
+    <!-- ── DURUM ─────────────────────────────────────────── -->
+    <section id="durum" class="sayfa">
+      <div class="durum-kart" id="durumKart">
+        <div class="durum-simge" id="durumSimge"></div>
+        <div class="durum-baslik" id="durumBaslik">Yükleniyor…</div>
+        <div class="durum-alt" id="durumAlt"></div>
+        <div class="ilerleme gizli" id="ilerleme"><div class="ilerleme-dolu" id="ilerlemeDolu"></div></div>
+      </div>
+
+      <div class="dugmeler">
+        <button class="dugme ana" id="btnEsitle"><span data-ikon="refresh-cw"></span>Şimdi eşitle</button>
+        <button class="dugme" id="btnPanel"><span data-ikon="external-link"></span>Paneli aç</button>
+      </div>
+
+      <div id="bantlar"></div>
+
+      <div class="bilgiler">
+        <div class="bilgi"><span data-ikon="building-2"></span><div><small>Firma</small><b id="bFirma">—</b></div></div>
+        <div class="bilgi"><span data-ikon="clock"></span><div><small>Sonraki eşitleme</small><b id="bSonraki">—</b></div></div>
+        <div class="bilgi"><span data-ikon="database"></span><div><small>SQL Server</small><b id="bSql">—</b></div></div>
+        <div class="bilgi"><span data-ikon="cloud" id="bBulutIkon"></span><div><small>Bulut</small><b id="bBulut">—</b></div></div>
+        <div class="bilgi"><span data-ikon="layers"></span><div><small>Son tur</small><b id="bParca">—</b></div></div>
+        <div class="bilgi"><span data-ikon="upload"></span><div><small>Gönderilen</small><b id="bGonderilen">—</b></div></div>
+      </div>
+    </section>
+
+    <!-- ── AYARLAR ───────────────────────────────────────── -->
+    <section id="ayarlar" class="sayfa gizli">
+      <div id="ayarBant"></div>
+      <form id="form" autocomplete="off" novalidate>
+        <fieldset>
+          <legend><span data-ikon="database"></span>SQL Server <small>(salt-okunur kullanıcı önerilir)</small></legend>
+          <label>Sunucu<input name="sunucu" placeholder="SUNUCU\SQLEXPRESS" spellcheck="false"></label>
+          <div class="ikili">
+            <label>Port<input name="port" inputmode="numeric" placeholder="1433"></label>
+            <label>Veritabanı<input name="veritabani" placeholder="VEGADB" spellcheck="false"></label>
+          </div>
+          <div class="ikili">
+            <label>Kullanıcı<input name="kullanici" placeholder="vega_kopru" spellcheck="false"></label>
+            <label>Şifre<span class="gizlen"><input name="sifre" type="password"><button type="button" class="goz" data-hedef="sifre" title="Göster"><span data-ikon="eye"></span></button></span></label>
+          </div>
+        </fieldset>
+
+        <fieldset>
+          <legend><span data-ikon="cloud"></span>Vega Bulut</legend>
+          <label>Adres<input name="adres" placeholder="https://panel.firmaniz.com" spellcheck="false"></label>
+          <label>Köprü anahtarı<span class="gizlen"><input name="anahtar" type="password" placeholder="vk_…" spellcheck="false"><button type="button" class="goz" data-hedef="anahtar" title="Göster"><span data-ikon="eye"></span></button></span></label>
+          <p class="ipucu"><span data-ikon="info"></span>Anahtarı panelde <b>Yönetim → Köprü</b> bölümünden alın.</p>
+        </fieldset>
+
+        <div class="dugmeler">
+          <button type="button" class="dugme" id="btnTest"><span data-ikon="plug"></span>Bağlantıyı test et</button>
+          <button type="submit" class="dugme ana" id="btnKaydet"><span data-ikon="save"></span>Kaydet ve başlat</button>
+        </div>
+        <div id="testSonuc" class="test-sonuc"></div>
+
+        <fieldset id="firmaAlani" class="gizli">
+          <legend><span data-ikon="building-2"></span>Gönderilecek firmalar</legend>
+          <div id="firmaListe" class="firmalar"></div>
+        </fieldset>
+
+        <details>
+          <summary><span data-ikon="settings"></span>Gelişmiş</summary>
+          <label>Başlangıç yılı<input name="baslangicYili" inputmode="numeric" placeholder="Boş: son 5 yıl"></label>
+          <label class="onay"><input type="checkbox" name="kirliOkuma">Kilit beklemeden oku (yoğun sunucularda; READ UNCOMMITTED)</label>
+        </details>
+      </form>
+
+      <fieldset class="calisma">
+        <legend><span data-ikon="power"></span>Çalışma</legend>
+        <label class="onay" id="girisSatir"><input type="checkbox" id="giris">Oturum açılınca başlat</label>
+        <div class="servis" id="servisSatir">
+          <span data-ikon="server"></span>
+          <div>
+            <b>Sunucu modu</b>
+            <small id="servisDurum">Oturum açılmasa da çalışır (Windows görevi, yönetici izni ister).</small>
+          </div>
+          <button type="button" class="dugme kucuk" id="btnServis"></button>
+        </div>
+      </fieldset>
+    </section>
+
+    <!-- ── GÜNLÜK ────────────────────────────────────────── -->
+    <section id="gunluk" class="sayfa gizli">
+      <div class="dugmeler sol">
+        <button class="dugme kucuk" id="btnKlasor"><span data-ikon="folder-open"></span>Klasörü aç</button>
+        <button class="dugme kucuk" id="btnTam" title="Tüm veriyi yeniden gönderir (uzun sürer)"><span data-ikon="refresh-cw"></span>Tam eşitleme</button>
+      </div>
+      <ol class="gunluk" id="gunlukListe"></ol>
+    </section>
+  </main>
+
+  <div class="bildirim gizli" id="bildirim"></div>
+
+  <script src="simgeler.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

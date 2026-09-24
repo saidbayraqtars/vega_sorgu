@@ -4,14 +4,19 @@
 //                  --sql-kullanici vega_okuma --sql-sifre ... [--veritabani VEGADB] [--sql-port 1433] [--firmalar 0101,0103]
 //   vega-kopru test          SQL ve bulut bağlantısını dener
 //   vega-kopru bir-kez [--tam]
-//   vega-kopru calistir      15 dakikada bir eşitler (Ctrl+C ile durur)
+//   vega-kopru calistir [--servis] [--gunluk dosya]   15 dakikada bir eşitler (Ctrl+C ile durur)
 //   vega-kopru durum
 // Ayar klasörü: VEGA_KOPRU_DIR (yoksa %APPDATA%\vega-sorgu-desktop)
+// --servis: Windows görevi (sunucu modu) olarak çalışır; ayar klasöründe kopru-servis.dur
+//           (kaldırma) ya da kopru-servis.bekle (güncelleme) belirince kendini kapatır.
 
 const { Config } = require("./config");
 const { Sql, discover } = require("./sql");
 const { Cloud } = require("./http");
 const { SyncEngine, humanError } = require("./sync");
+const { Logger } = require("./logger");
+const fs = require("fs");
+const path = require("path");
 const pkg = require("../package.json");
 
 function args(argv) {
@@ -27,15 +32,12 @@ function args(argv) {
   return out;
 }
 
-const log = {
-  info: (m) => console.log(`${new Date().toISOString()} ${m}`),
-  error: (m) => console.error(`${new Date().toISOString()} ${m}`),
-};
-
 async function main() {
   const a = args(process.argv.slice(2));
   const cmd = a._[0];
   const config = new Config();
+  const logFile = typeof a.gunluk === "string" ? a.gunluk : process.env.VEGA_KOPRU_LOG || (a.servis ? path.join(config.dir, "servis.log") : null);
+  const log = new Logger(logFile, { echo: true });
   switch (cmd) {
     case "kur": {
       const patch = { sql: {}, bulut: {} };
@@ -77,12 +79,30 @@ async function main() {
       break;
     }
     case "calistir": {
-      if (!config.ready()) throw new Error(`Ayarlar eksik. Önce: vega-kopru kur … (ayar dosyası: ${config.file})`);
-      const eng = new SyncEngine(config, { log });
+      const servis = !!a.servis;
+      const stopFile = path.join(config.dir, "kopru-servis.dur");
+      // Sunucu modunda ayarlar henüz tamam değilse bekle (tepsi uygulamasından girilecek)
+      while (!config.ready()) {
+        if (!servis) throw new Error(`Ayarlar eksik. Önce: vega-kopru kur … (ayar dosyası: ${config.file})`);
+        if (fs.existsSync(stopFile)) return;
+        log.warn("Ayarlar eksik; 60 sn sonra yeniden denenecek.");
+        await new Promise((r) => setTimeout(r, 60000));
+        config.reloadIfChanged();
+      }
+      const eng = new SyncEngine(config, { log, sahip: servis ? "servis" : "komut" });
       eng.start();
-      log.info(`Vega Köprü ${pkg.version} çalışıyor (aralık ${eng.intervalMin} dk). Durdurmak için Ctrl+C.`);
+      log.info(`Vega Köprü ${pkg.version} çalışıyor (aralık ${eng.intervalMin} dk${servis ? ", sunucu modu" : ""}).${servis ? "" : " Durdurmak için Ctrl+C."}`);
       const stop = () => { eng.stop(); process.exit(0); };
       process.on("SIGINT", stop); process.on("SIGTERM", stop);
+      if (servis) {
+        const waitFile = path.join(config.dir, "kopru-servis.bekle");
+        setInterval(() => {
+          if (fs.existsSync(stopFile)) { log.info("Sunucu modu kaldırıldı; köprü kapanıyor."); stop(); }
+          let w = null;
+          try { w = fs.statSync(waitFile); } catch { /* yok */ }
+          if (w && Date.now() - w.mtimeMs < 30 * 60000 && !eng.running) { log.info("Güncelleme kuruluyor; köprü geçici olarak kapanıyor."); stop(); }
+        }, 10000);
+      }
       break;
     }
     case "durum": {

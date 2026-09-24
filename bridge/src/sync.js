@@ -15,6 +15,7 @@ const { EventEmitter } = require("events");
 const { DATASETS, chunkKey, scopeKey } = require("../../shared/datasets");
 const { Sql, discover } = require("./sql");
 const { Cloud } = require("./http");
+const { Lock } = require("./lock");
 const X = require("./extract");
 const pkg = require("../package.json");
 
@@ -25,21 +26,39 @@ const DONEM_DS = ["cari_hareket", "kasa_hareket", "banka_hareket", "satis", "ali
 function sha(rows) { return crypto.createHash("sha1").update(JSON.stringify(rows)).digest("hex").slice(0, 16); }
 
 class SyncEngine extends EventEmitter {
-  constructor(config, { log = console, now = () => new Date() } = {}) {
+  constructor(config, { log = console, now = () => new Date(), sahip = "kopru", yoklamaMs = {} } = {}) {
     super();
     this.config = config;
     this.log = log;
     this.now = now;
+    this.sahip = sahip;        // tepsi | servis | komut — kilitte ve canlı durumda görünür
+    this.mode = "durdu";       // etkin | izleyici (başka süreç eşitliyor) | durdu
     this.running = false;
     this.timer = null;
     this.pingTimer = null;
+    this.localTimer = null;
+    this.lockTimer = null;
+    this.lock = null;
+    this.nextAt = null;
     this.intervalMin = 15;
+    this.lastPersist = 0;
+    this.yoklama = { yerel: 10000, kilit: 60000, ping: 60000, ...yoklamaMs };
     this.status = { durum: "bekliyor", son: null, sonHata: null, ilerleme: null, sonuc: null };
   }
 
   setStatus(patch) {
     this.status = { ...this.status, ...patch };
     this.emit("status", this.status);
+    this.persist(!patch.ilerleme);
+  }
+
+  // Canlı durum ayar klasörüne yazılır: izleyici süreç (ör. sunucu modunda tepsi) buradan okur
+  persist(force = false) {
+    if (this.mode !== "etkin") return;
+    const t = Date.now();
+    if (!force && t - this.lastPersist < 1500) return;
+    this.lastPersist = t;
+    this.config.setState({ canli: { ...this.status, mod: this.mode, sahip: this.sahip, pid: process.pid, sonraki: this.nextAt, aralikDk: this.intervalMin, at: new Date().toISOString() } });
   }
 
   cloud() {
@@ -50,6 +69,7 @@ class SyncEngine extends EventEmitter {
   async runOnce({ full = false, reason = "zamanlayici" } = {}) {
     if (this.running) return { atlandi: true };
     this.running = true;
+    if (this.config.reloadIfChanged && this.config.reloadIfChanged()) this.log.info("[köprü] ayarlar yeniden okundu");
     const syncId = `${Date.now().toString(36)}-${crypto.randomBytes(4).toString("hex")}`;
     const started = Date.now();
     let cloud = null, sql = null;
@@ -61,6 +81,7 @@ class SyncEngine extends EventEmitter {
       const info = await sql.info();
       const hello = await cloud.hello({ surum: pkg.version, makine: os.hostname(), sql: { surum: info.surum, veritabani: info.veritabani } });
       if (hello && hello.aralikDk) this.intervalMin = hello.aralikDk;
+      this.setStatus({ firma: hello && hello.firma ? hello.firma : null, kaynak: { makine: info.makine, veritabani: info.veritabani } });
 
       // ── Keşif ──
       this.setStatus({ ilerleme: { adim: "Firma ve dönemler okunuyor", yuzde: 5 } });
@@ -161,19 +182,49 @@ class SyncEngine extends EventEmitter {
     }
   }
 
-  // Zamanlayıcı: aralık + ping
-  start() {
+  // Zamanlayıcı: aralık + ping + yerel istek dosyası. kilit=true iken aynı klasörde
+  // yalnız bir süreç eşitler; diğeri izleyici olur ve 60 sn'de bir kilidi yeniden dener.
+  start({ kilit = true } = {}) {
     this.stopped = false;
-    const loop = async (full = false, reason = "zamanlayici") => {
+    if (kilit && !this.lock) this.lock = new Lock(this.config.dir, this.sahip);
+    const tryStart = () => {
       if (this.stopped) return;
+      if (this.lock && !this.lock.tryAcquire()) {
+        const h = this.lock.holder();
+        this.mode = "izleyici";
+        this.emit("status", { ...this.status, durum: "baska", baskaSahip: h ? h.sahip : null });
+        this.lockTimer = setTimeout(tryStart, this.yoklama.kilit);
+        return;
+      }
+      if (this.lock) {
+        this.lock.onLost = () => {
+          this.log.info("[köprü] kilit başka sürece geçti; izleyici moduna dönülüyor");
+          this.stopLoops();
+          tryStart();
+        };
+      }
+      this.mode = "etkin";
+      this.startLoops();
+    };
+    tryStart();
+  }
+
+  startLoops() {
+    const loop = async (full = false, reason = "zamanlayici") => {
+      if (this.stopped || this.mode !== "etkin") return;
       clearTimeout(this.timer);
+      this.nextAt = null;
       try { await this.runOnce({ full, reason }); } catch { /* durumda */ }
-      if (!this.stopped) this.timer = setTimeout(() => loop(), this.intervalMin * 60000);
+      if (!this.stopped && this.mode === "etkin") {
+        this.timer = setTimeout(() => loop(), this.intervalMin * 60000);
+        this.nextAt = new Date(Date.now() + this.intervalMin * 60000).toISOString();
+        this.persist(true);
+      }
     };
     this.loop = loop;
     loop(false, "baslangic");
     const ping = async () => {
-      if (this.stopped) return;
+      if (this.stopped || this.mode !== "etkin") return;
       try {
         const p = await this.cloud().ping();
         if (p && p.aralikDk && p.aralikDk !== this.intervalMin) this.intervalMin = p.aralikDk;
@@ -182,17 +233,39 @@ class SyncEngine extends EventEmitter {
       } catch (e) {
         this.setStatus({ baglanti: "yok", sonPingHata: humanError(e) });
       }
-      if (!this.stopped) this.pingTimer = setTimeout(ping, 60000);
+      if (!this.stopped && this.mode === "etkin") this.pingTimer = setTimeout(ping, this.yoklama.ping);
     };
-    this.pingTimer = setTimeout(ping, 60000);
+    this.pingTimer = setTimeout(ping, this.yoklama.ping);
+    // İzleyici süreçlerin "Şimdi eşitle" isteği (kopru-istek.json)
+    const local = () => {
+      if (this.stopped || this.mode !== "etkin") return;
+      const req = this.config.takeRequest();
+      if (req && !this.running) loop(!!req.tam, "elle");
+      this.localTimer = setTimeout(local, this.yoklama.yerel);
+    };
+    this.localTimer = setTimeout(local, this.yoklama.yerel);
   }
 
-  syncNow(full = false) { if (this.loop && !this.running) this.loop(full, "elle"); }
+  // Etkin süreçte hemen eşitle; izleyicide isteği dosyaya bırak (etkin süreç ≤ 10 sn'de alır)
+  syncNow(full = false) {
+    if (this.mode === "etkin") { if (this.loop && !this.running) this.loop(full, "elle"); return "basladi"; }
+    this.config.request({ tam: !!full });
+    return "istendi";
+  }
+
+  stopLoops() {
+    clearTimeout(this.timer);
+    clearTimeout(this.pingTimer);
+    clearTimeout(this.localTimer);
+    this.nextAt = null;
+    this.mode = "durdu";
+  }
 
   stop() {
     this.stopped = true;
-    clearTimeout(this.timer);
-    clearTimeout(this.pingTimer);
+    this.stopLoops();
+    clearTimeout(this.lockTimer);
+    if (this.lock) this.lock.release();
   }
 }
 

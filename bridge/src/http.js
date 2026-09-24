@@ -59,7 +59,7 @@ class Cloud {
     return { data, bytes: payload ? payload.length : 0 };
   }
 
-  hello(ajan) { return this.request("POST", "/hello", { ajan }).then((r) => r.data); }
+  hello(ajan, { retries = 3 } = {}) { return this.request("POST", "/hello", { ajan }, { retries }).then((r) => r.data); }
   ping() { return this.request("GET", "/ping", undefined, { retries: 0 }).then((r) => r.data); }
   manifest(body) { return this.request("POST", "/manifest", body, { gzip: true }).then((r) => r.data); }
   chunk(body) { return this.request("POST", "/chunk", body, { gzip: true }); }

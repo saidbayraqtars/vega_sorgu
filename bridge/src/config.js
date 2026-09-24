@@ -28,13 +28,14 @@ class Config {
     this.dir = dir;
     this.file = path.join(dir, "kopru.json");
     this.stateFile = path.join(dir, "kopru-durum.json");
+    this.requestFile = path.join(dir, "kopru-istek.json");
     this.data = JSON.parse(JSON.stringify(DEFAULTS));
     this.load();
   }
 
   load() {
     let raw = null;
-    try { raw = JSON.parse(fs.readFileSync(this.file, "utf8")); } catch { /* yok */ }
+    try { raw = JSON.parse(fs.readFileSync(this.file, "utf8")); this.mtime = fs.statSync(this.file).mtimeMs; } catch { /* yok */ }
     if (raw) {
       this.data = { ...DEFAULTS, ...raw, sql: { ...DEFAULTS.sql, ...(raw.sql || {}) }, bulut: { ...DEFAULTS.bulut, ...(raw.bulut || {}) } };
       return;
@@ -54,6 +55,17 @@ class Config {
   save() {
     fs.mkdirSync(this.dir, { recursive: true });
     fs.writeFileSync(this.file, JSON.stringify(this.data, null, 2));
+    try { this.mtime = fs.statSync(this.file).mtimeMs; } catch { /* yok */ }
+  }
+
+  // Başka süreç (tepsi uygulaması) ayarları değiştirdiyse yeniden oku — sunucu modu için
+  reloadIfChanged() {
+    let m = 0;
+    try { m = fs.statSync(this.file).mtimeMs; } catch { return false; }
+    if (m === this.mtime) return false;
+    this.data = JSON.parse(JSON.stringify(DEFAULTS));
+    this.load();
+    return true;
   }
 
   // Düz metin değerlerle güncelle (parola/anahtar burada şifrelenir)
@@ -92,6 +104,17 @@ class Config {
     const s = { ...this.state(), ...patch };
     try { fs.mkdirSync(this.dir, { recursive: true }); fs.writeFileSync(this.stateFile, JSON.stringify(s, null, 2)); } catch { /* yazılamadı */ }
     return s;
+  }
+
+  // İzleyici süreçten etkin sürece "şimdi eşitle" isteği
+  request(req = {}) {
+    try { fs.mkdirSync(this.dir, { recursive: true }); fs.writeFileSync(this.requestFile, JSON.stringify({ ...req, at: new Date().toISOString() })); } catch { /* yazılamadı */ }
+  }
+  takeRequest() {
+    let r = null;
+    try { r = JSON.parse(fs.readFileSync(this.requestFile, "utf8")); } catch { return null; }
+    try { fs.unlinkSync(this.requestFile); } catch { /* yok */ }
+    return r;
   }
 }
 
