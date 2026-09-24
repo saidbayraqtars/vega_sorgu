@@ -5,7 +5,8 @@ export type Tema = "acik" | "koyu" | "sistem";
 
 export type FirmaKisa = { id: number; kod: string; ad: string };
 
-export type Tercihler = { tema?: Tema; donem?: string; firmalar?: string[]; anaPano?: number };
+/** firmalar: [] = etkin firmalar · ["hepsi"] = kapanmışlar dahil tümü; donemBas/donemBit: donem = "ozel" iken */
+export type Tercihler = { tema?: Tema; donem?: string; donemBas?: string | null; donemBit?: string | null; firmalar?: string[]; anaPano?: number };
 
 export type Kullanici = {
   id: number;
@@ -46,7 +47,8 @@ export type Meta = {
   rol: Rol;
 };
 
-export type Surum = { veriSurumu: number; esitleniyor: boolean; bekleyenIstek: boolean; kopru: KopruDurumu };
+export type UyariOzet = { kritik: number; uyari: number; bilgi: number };
+export type Surum = { veriSurumu: number; esitleniyor: boolean; bekleyenIstek: boolean; kopru: KopruDurumu; uyariOzet?: UyariOzet };
 
 export type Renk = "iyi" | "orta" | "zayif" | "kritik" | "notr";
 export type Iyi = "yukari" | "asagi" | "notr";
@@ -204,8 +206,12 @@ export type RaporTanimi = {
   olcu: string | null;
   boyut: string | null;
   gorunum: Gorunum;
-  parametreler: { donem: boolean; n?: boolean; kirilim?: boolean };
+  iyi?: Iyi;
+  parametreler: RaporParametreleri;
 };
+
+/** Hangi seçicilerin gösterileceği; nSecenekler/nVarsayilan yalnız n = true iken dolu */
+export type RaporParametreleri = { donem: boolean; n?: boolean; kirilim?: boolean; nVarsayilan?: number | null; nSecenekler?: number[] | null };
 
 export type Katalog = { kategoriler: Kategori[]; raporlar: RaporTanimi[] };
 
@@ -239,7 +245,7 @@ export type Sonuc =
       toplam?: number; adet?: number; sirali?: boolean; karsilastirma?: { ad: string; bas: string; bit: string };
       artan?: number; azalan?: number; abc?: Record<"A" | "B" | "C", { adet: number; v: number }>; doviz?: DovizMap } & Ortak)
   | ({ tur: "matris"; birim: string; x: { k: unknown; ad: string }[]; y: { k: unknown; ad: string }[]; hucreler: [number, number, number | null][] } & Ortak)
-  | ({ tur: "tablo"; kolonlar: Kolon[]; satirlar: Record<string, unknown>[]; toplam?: Record<string, number> | null } & Ortak)
+  | ({ tur: "tablo"; kolonlar: Kolon[]; satirlar: Record<string, unknown>[]; toplam?: Record<string, number> | null; adet?: number } & Ortak)
   | ({ tur: "coklu"; parcalar: (Sonuc & { grafik?: GrafikTuru })[] } & Ortak)
   | ({ tur: "saglik" } & Saglik & Ortak)
   | ({ tur: "buyume" } & Buyume & Ortak)
@@ -266,7 +272,8 @@ export type DurumSonuc = {
 
 export type RaporYanit = {
   rapor: { id: string; ad: string; kisa: string; ikon: string; kategori: string; birim: string; iyi?: Iyi; aciklama: string; grafik: GrafikTuru; grafikler: GrafikTuru[] };
-  donem: { kod: string; ad: string; bas: string; bit: string; gun: number };
+  donem: { kod: string; ad: string; bas: string; bit: string; gun: number } | null; // dönem kullanmayan raporda null
+  n?: number; // "ilk N" raporlarında uygulanan satır sayısı
   sonuc: Sonuc;
   veriSurumu: number;
 };

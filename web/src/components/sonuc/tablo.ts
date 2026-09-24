@@ -2,7 +2,8 @@
 import { olcutDegeri } from "../../lib/bicim";
 import type { Kolon, Sonuc } from "../../lib/types";
 
-export type TabloVeri = { kolonlar: Kolon[]; satirlar: Record<string, unknown>[]; toplam?: Record<string, number> | null; boyutId?: string };
+/** adet: sunucu "ilk N" uyguladıysa kısaltılmadan önceki toplam satır sayısı */
+export type TabloVeri = { kolonlar: Kolon[]; satirlar: Record<string, unknown>[]; toplam?: Record<string, number> | null; boyutId?: string; adet?: number };
 
 export function birimTipi(birim: string | undefined): Kolon["tip"] {
   if (birim === "TL") return "tl";
@@ -15,7 +16,7 @@ export function tabloyaDonustur(s: Sonuc, birimVarsayilan?: string): TabloVeri |
   const vt = birimTipi(birim);
   switch (s.tur) {
     case "tablo":
-      return { kolonlar: s.kolonlar, satirlar: s.satirlar, toplam: s.toplam };
+      return { kolonlar: s.kolonlar, satirlar: s.satirlar, toplam: s.toplam, adet: s.adet };
     case "kpi": {
       const satirlar = [
         { ad: "Bu dönem", v: s.deger },

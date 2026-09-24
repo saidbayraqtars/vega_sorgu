@@ -40,9 +40,18 @@ npm run test:e2e                   # tümü (~4-6 dk; 1.085 raporun hepsi 8 para
 npx playwright test --grep-invert "tüm raporlar"   # hızlı set (~25 sn)
 ```
 
-Farklı adres: `VB_URL=http://localhost:8080 npm run test:e2e`.
+Farklı adres: `VB_URL=http://localhost:8080 npm run test:e2e`. Önceden kurulu Chromium ile (indirme yapmadan):
+`PW_CHROMIUM=/yol/chromium npm run test:e2e`.
 Testler: giriş/çıkış ve hatalı şifre · Durum bölümleri · pano kutu ekle/sırala/grafik/sil kalıcılığı · katalog araması ·
+izleyici (salt görüntüleme) rolü + uyarı rozeti · sözleşme (ölçüt birimleri, "ilk N" seçenekleri, dönemsiz raporlar) ·
 tüm rapor kimlikleri (yakalanmamış hata / konsol hatası yok) · 390×844 ve 1440×900 ekran görüntüleri + koyu tema → `screenshots/`.
+
+## Tasarım kararları
+
+- Trend, kümülatif ve ısı/mevsim kutuları kendi dönemi yoksa genel dönemi değil **raporun varsayılan dönemini** kullanır
+  (genel dönem "Bu ay" iken aylık trend tek sütuna düşüyordu); kutudaki rozet kullanılan dönemi gösterir.
+- Yatay çubuk grafikte "Diğer" çubuğu diğerlerini ezip etiketleri kestiği için grafiğin altında ayrı satırdır.
+- Tercihler (tema, dönem ve özel aralık, firma seçimi — "Tümü" dahil) sunucuda saklanır; tarayıcıda yalnız ilk boyama için tema tutulur.
 
 ## Yapı
 

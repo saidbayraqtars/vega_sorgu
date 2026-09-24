@@ -7,7 +7,7 @@ import { SortableContext, arrayMove, rectSortingStrategy, sortableKeyboardCoordi
 import { CSS } from "@dnd-kit/utilities";
 import { Pencil, Check, Plus, GripVertical, Settings2, Trash2, RotateCcw, Maximize2, Cloud, CloudOff, LayoutDashboard } from "lucide-react";
 import { api } from "../lib/api";
-import type { Boyut, GrafikTuru, Kutu, Pano, RaporTanimi } from "../lib/types";
+import type { Boyut, GrafikTuru, Kutu, Pano, RaporParametreleri, RaporTanimi } from "../lib/types";
 import { GRAFIK } from "../lib/grafikler";
 import { tarih } from "../lib/bicim";
 import { Baglanti, useYon } from "../lib/yonlendirici";
@@ -20,7 +20,7 @@ import { KatalogGezgini } from "../components/KatalogGezgini";
 import { BoyutSecici } from "./RaporGoruntuleyici";
 
 const PANO_IKONLARI = ["LayoutDashboard", "LayoutGrid", "ShoppingCart", "Wallet", "Users", "Package", "Warehouse", "HandCoins", "PiggyBank", "Landmark", "Truck", "Rocket", "HeartPulse", "Star", "Target", "Briefcase"];
-const N_SECENEK = [5, 10, 20, 50];
+const N_SECENEK = [5, 10, 20, 50]; // katalog nSecenekler vermezse
 
 const boyutSinif: Record<Boyut, string> = { s: "col-span-1", m: "col-span-1 sm:col-span-2", l: "col-span-1 sm:col-span-2 lg:col-span-4" };
 
@@ -234,7 +234,7 @@ const PanoKutusu = memo(function PanoKutusu({ kutu, duzenle, degistir, tutamak }
   const tanim = useMemo(() => katalog?.raporlar.find((r) => r.id === kutu.rapor), [katalog, kutu.rapor]);
   const [ref, gorunur] = useGorunur<HTMLDivElement>();
   const [menuAcik, setMenuAcik] = useState(false);
-  const pr = tanim?.parametreler || { donem: true };
+  const pr: RaporParametreleri = tanim?.parametreler || { donem: true };
   const kendiDonemi = !!kutu.donem;
   // Zaman yapılı raporlar (trend, kümülatif, ısı/mevsim) kısa genel dönemde anlamsızlaşır (ör. "Bu ay" → tek sütun);
   // kendi dönemi yoksa raporun varsayılan dönemini kullanır. Diğer kutular genel dönemi izler.
@@ -366,8 +366,8 @@ function KutuAyarPenceresi({ acik, kapat, kutu, tanim, degistir }: { acik: boole
         {pr.n && (
           <Alan etiket="İlk N">
             <div className="flex rounded-xl bg-kart2 p-0.5" role="group" aria-label="İlk N">
-              {N_SECENEK.map((n) => (
-                <button key={n} type="button" aria-pressed={kutu.n === n} onClick={() => degistir({ n })} className={cx("min-h-9 flex-1 rounded-lg text-sm rakam", kutu.n === n ? "bg-kart font-bold text-marka shadow" : "text-soluk")}>
+              {(pr.nSecenekler || N_SECENEK).map((n) => (
+                <button key={n} type="button" aria-pressed={(kutu.n ?? pr.nVarsayilan) === n} onClick={() => degistir({ n })} className={cx("min-h-9 flex-1 rounded-lg text-sm rakam", (kutu.n ?? pr.nVarsayilan) === n ? "bg-kart font-bold text-marka shadow" : "text-soluk")}>
                   {n}
                 </button>
               ))}

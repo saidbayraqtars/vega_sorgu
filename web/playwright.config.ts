@@ -15,6 +15,8 @@ export default defineConfig({
     locale: "tr-TR",
     timezoneId: "Europe/Istanbul",
     trace: "retain-on-failure",
+    // Önceden kurulu Chromium (CI/konteyner): PW_CHROMIUM=/yol/chromium
+    ...(process.env.PW_CHROMIUM ? { launchOptions: { executablePath: process.env.PW_CHROMIUM } } : {}),
   },
   projects: [
     { name: "kurulum", testMatch: /kurulum\.ts/ },

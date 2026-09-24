@@ -132,6 +132,11 @@ export function TabloGorunum({ veri, kompakt, sayfa = 50 }: { veri: TabloVeri; k
           <ChevronDown size={16} aria-hidden /> Daha fazla ({satirlar.length - limit})
         </button>
       )}
+      {veri.adet !== undefined && veri.adet > veri.satirlar.length && (
+        <p className="text-center text-xs text-soluk rakam" data-testid="tablo-kisaltildi">
+          {veri.satirlar.length} / {veri.adet} satır gösteriliyor · tümü için "İlk N"yi artırın
+        </p>
+      )}
     </div>
   );
 }

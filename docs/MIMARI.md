@@ -26,7 +26,7 @@
 | `bridge/` | SQL keşfi, çıkarım sorguları (SQL Server 2008+), parmak izi, eşitleme motoru, kilit, komut satırı | Node ≥ 18, `mssql` |
 | `electron/` | Köprünün Windows tepsi uygulaması: ayar/durum/günlük penceresi, sunucu modu (Zamanlanmış Görev), otomatik güncelleme | Electron 44 |
 | `cloud/` | Alım API'si, kiracı depoları, analiz motoru, rapor kataloğu, panel API'si, yönetim | Node ≥ 22.13, Express 5, yerleşik `node:sqlite` |
-| `web/` | Panel arayüzü (ayrı geliştirilir — görev tanımı [ARAYUZ-PROMPT.md](ARAYUZ-PROMPT.md), sözleşme [API.md](API.md)) | Vite, React, Tailwind, ECharts |
+| `web/` | Panel arayüzü: durum, panolar (sürükle-bırak), 1.085 raporluk katalog, uyarılar, ayarlar, yönetim; sözleşme [API.md](API.md) | Vite, React 19, TypeScript, Tailwind 4, ECharts 6 |
 | `deploy/` | Dockerfile, docker-compose + Caddy, systemd birimi, yedek betiği | |
 
 Eski masaüstü sürümü (`server/`, `client/`, `VegaSorgu.exe`) yeni sistemde kullanılmaz.

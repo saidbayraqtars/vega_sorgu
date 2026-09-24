@@ -24,7 +24,7 @@ Müşteri SQL Server ──(Vega Köprü, salt-okunur, yalnız dışarı HTTPS)�
 | [`cloud/`](cloud/) | **Vega Bulut** — VPS sunucusu: alım API'si, analiz motoru, rapor kataloğu, panel API'si |
 | [`bridge/`](bridge/) | **Vega Köprü** çekirdeği — SQL keşfi, çıkarım, artımlı eşitleme, komut satırı |
 | [`electron/`](electron/) | Köprünün Windows tepsi uygulaması (eski "Vega Sorgu" masaüstü uygulamasının yerini alır) |
-| `web/` | Panel arayüzü (React, ayrı geliştirilir) — görev tanımı: [docs/ARAYUZ-PROMPT.md](docs/ARAYUZ-PROMPT.md) |
+| [`web/`](web/) | **Panel arayüzü** — React 19, Vite, Tailwind, ECharts (tembel yüklenir); ilk yükleme 139 KB gzip |
 | [`shared/`](shared/) | Köprü ↔ bulut veri sözleşmesi |
 | [`deploy/`](deploy/) | Docker + Caddy (otomatik HTTPS), systemd, yedekleme |
 | [`docs/`](docs/) | Belgeler |
@@ -32,10 +32,11 @@ Müşteri SQL Server ──(Vega Köprü, salt-okunur, yalnız dışarı HTTPS)�
 ## Hızlı başlangıç (demo)
 
 ```bash
-cd cloud && npm install
+cd web && npm install && npm run build   # arayüz → web/dist (sunucu açılışta otomatik sunar)
+cd ../cloud && npm install
 npm run demo      # demo firması + örnek veri
-npm start         # http://localhost:8080 → demo / demo123 · admin / admin123
-npm test          # 44 test: motor Arctos formüllerine karşı, 1.085 raporun tamamı, HTTP uçları
+npm start         # http://localhost:8080 → demo / demo123 · izleyici / izleyici123 · admin / admin123
+npm test          # 53 test: motor Arctos formüllerine karşı, 1.085 raporun tamamı, HTTP uçları
 ```
 
 Canlı kurulum: **[docs/KURULUM.md](docs/KURULUM.md)** (VPS'te `docker compose up -d --build`).

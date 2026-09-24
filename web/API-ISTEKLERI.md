@@ -1,6 +1,24 @@
 # Sunucu (API) istekleri
 
-Arayüz yazılırken `cloud/` tarafında görülen eksik/tutarsızlıklar. Arayüz şimdilik aşağıdaki geçici çözümlerle çalışıyor.
+Arayüz yazılırken `cloud/` tarafında görülen eksik/tutarsızlıklar.
+
+> **Durum (sunucu tarafı yanıtı):** 0–8 arası tüm maddeler kapatıldı; arayüzdeki geçici çözümler kaldırıldı.
+> Sözleşme: [`../docs/API.md`](../docs/API.md). Her madde bir testle korunuyor (aşağıda).
+>
+> | # | Durum | Nerede |
+> |---|---|---|
+> | 0 | ✅ Zaten düzeltilmişti (`e793c34`); arayüz dalı bu commit'ten önce açıldığı için görünmüyordu | `cloud/test/api.test.js` "roller", `web/tests/izleyici.spec.ts` |
+> | 1 | ✅ `%` → yüzde sayısı (29.96), `puan` → yüzde puanı (−9.3, ivme dahil); `olcutDegeri` geçici çözümü kaldırıldı | `cloud/test/engine.test.js`, `web/tests/sozlesme.spec.ts` |
+> | 2 | ✅ `firmalar: ["hepsi"]` saklanıyor; arayüz tarayıcı yerine sunucuya yazıyor | `cloud/test/api.test.js` |
+> | 3 | ✅ `donemBas` / `donemBit` eklendi; arayüz sunucuya yazıyor | `cloud/test/api.test.js` |
+> | 4 | ✅ Her raporda `iyi` (46 özel rapor tek tek; yönsüzler `"notr"`), katalogda da | `cloud/test/catalog.test.js` |
+> | 5 | ✅ Dönem kullanmayan **30** özel rapor (önceden yalnız 6'sı işaretliydi): `parametreler.donem: false`, yanıtta `donem: null` — veriyle doğrulandı | `cloud/test/catalog.test.js` |
+> | 6 | ✅ `parametreler.nVarsayilan` + `nSecenekler`; N artık doğrudan satır sayısı (önceden pareto en az 30, özel tablolarda N×3/×5/×10 idi); tablolarda `adet`, yanıtta uygulanan `n`; seçiciler bunlardan kuruluyor | `cloud/test/catalog.test.js`, `web/tests/sozlesme.spec.ts` |
+> | 7 | ✅ `/api/surum[?firma=]` → `uyariOzet`; Uyarılar menüsünde rozet | `cloud/test/api.test.js`, `web/tests/izleyici.spec.ts` |
+> | 8 | ✅ Sunucunun gönderebileceği 118 ikonun tamamı eşlemede; eşlemede olmayan ikon eklenirse test düşer | `cloud/test/ikonlar.test.js` |
+>
+> Ek: "Veriler güncel değil" uyarısı önbelleğe takılıyordu (köprü susunca veri sürümü değişmediği için o gün hiç çıkmıyordu);
+> artık her istekte güncel hesaplanıyor.
 
 ## 0. KRİTİK — İzleyici (`rol: user`) hiçbir veri ucuna erişemiyor (403)
 `izleyici / izleyici123` ile giriş yapınca `/api/meta`, `/api/durum`, `/api/surum`, `/api/raporlar`, `/api/rapor/*` → **403 "Bu işlem için yönetici yetkisi gerekli."**

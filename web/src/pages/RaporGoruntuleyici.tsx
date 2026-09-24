@@ -7,14 +7,14 @@ import { useSorguParam, useYon } from "../lib/yonlendirici";
 import { GRAFIK } from "../lib/grafikler";
 import { csvIndir } from "../lib/csv";
 import { tarih } from "../lib/bicim";
-import type { Boyut, GrafikTuru, RaporParam, RaporTanimi, Sonuc } from "../lib/types";
+import type { Boyut, GrafikTuru, RaporParam, RaporParametreleri, RaporTanimi, Sonuc } from "../lib/types";
 import { Alan, Dugme, HataKutusu, HataSiniri, Ikon, IkonDugme, Kart, KutuIskelet, Pencere, Yardim, cx, girdiSinif } from "../components/ui";
 import { SonucGorunum } from "../components/sonuc/SonucGorunum";
 import { TabloGorunum, hucreMetni } from "../components/sonuc/TabloGorunum";
 import { tabloyaDonustur, type TabloVeri } from "../components/sonuc/tablo";
 import { kutuEkle, panolariYukle, usePanolar, yeniId } from "../state/panolar";
 
-const N_SECENEK = [5, 10, 20, 50];
+const N_SECENEK = [5, 10, 20, 50]; // katalog nSecenekler vermezse
 
 function csvTablosu(s: Sonuc, birim?: string): TabloVeri | null {
   if (s.tur === "coklu") {
@@ -30,7 +30,7 @@ export function RaporGoruntuleyici({ id }: { id: string }) {
   const q = useSorguParam();
   const { veri: katalog } = useKatalog();
   const tanim = useMemo<RaporTanimi | undefined>(() => katalog?.raporlar.find((r) => r.id === id), [katalog, id]);
-  const pr = tanim?.parametreler || { donem: true };
+  const pr: RaporParametreleri = tanim?.parametreler || { donem: true };
 
   const donem = q.get("donem") || tanim?.donem || undefined;
   const param: RaporParam = {
@@ -131,8 +131,8 @@ export function RaporGoruntuleyici({ id }: { id: string }) {
             {pr.n && (
               <div className="flex items-center gap-1 rounded-xl bg-kart2 p-0.5" role="group" aria-label="İlk N">
                 <Ikon ad="ListOrdered" boyut={16} className="ml-1.5 text-soluk" />
-                {N_SECENEK.map((n) => {
-                  const aktif = param.n === n;
+                {(pr.nSecenekler || N_SECENEK).map((n) => {
+                  const aktif = (param.n ?? veri?.n ?? pr.nVarsayilan) === n;
                   return (
                     <button key={n} type="button" aria-pressed={aktif} onClick={() => paramAyarla({ n })} className={cx("min-h-9 min-w-9 rounded-lg px-2 text-sm rakam", aktif ? "bg-kart font-semibold shadow" : "text-soluk")} title={`İlk ${n}`}>
                       {n}

@@ -139,16 +139,15 @@ export function birimli(v: number | null | undefined, birim: string | undefined,
   }
 }
 
-/** Sağlık ölçütü değeri (birim: % kesir, puan, x, gün) */
+/** Sağlık ölçütü değeri — API birim kuralı: % → yüzde sayısı (29.96), puan → yüzde puanı (−9.3), x, gün */
 export function olcutDegeri(o: { id: string; deger: number | null; birim: string }): string {
   const v = o.deger;
   if (!sayiMi(v)) return bos;
   switch (o.birim) {
     case "%":
-      return yuzde(v);
+      return yuzdeSayi(v);
     case "puan":
-      // Sunucu "ivme" ölçütünü kesir, diğer puan ölçütlerini puan olarak gönderiyor (bkz. API-ISTEKLERI.md)
-      return puan(o.id === "ivme" ? v * 100 : v);
+      return puan(v);
     case "x":
       return `${sayi(v, 2)}x`;
     case "gün":

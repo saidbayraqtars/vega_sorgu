@@ -7,7 +7,7 @@ import { useUygulama } from "../state/uygulama";
 import { Baglanti, useYon } from "../lib/yonlendirici";
 import { api } from "../lib/api";
 import { goreliZaman, tarih } from "../lib/bicim";
-import type { KopruDurumKodu, Tema } from "../lib/types";
+import type { KopruDurumKodu, Tema, UyariOzet } from "../lib/types";
 import { Acilir } from "./Acilir";
 import { Alan, Dugme, Ikon, IkonDugme, Pencere, cx, girdiSinif } from "./ui";
 
@@ -25,10 +25,28 @@ function navOgeleri(rol: string | undefined): NavOge[] {
   return l;
 }
 
+// Uyarılar menü öğesindeki rozet: kritik varsa kırmızı, yoksa uyarı sayısı amber
+function uyariRozeti(o?: UyariOzet) {
+  if (!o) return null;
+  if (o.kritik > 0) return { n: o.kritik, sinif: "bg-kotu", ad: `${o.kritik} kritik uyarı` };
+  if (o.uyari > 0) return { n: o.uyari, sinif: "bg-orta", ad: `${o.uyari} uyarı` };
+  return null;
+}
+
+function Rozet({ r, className }: { r: { n: number; sinif: string }; className?: string }) {
+  return (
+    <span aria-hidden data-testid="uyari-rozeti" className={cx("absolute flex h-5 min-w-5 items-center justify-center rounded-full px-1 text-[11px] leading-none font-bold text-white rakam dark:text-[#0b1020]", r.sinif, className)}>
+      {r.n > 99 ? "99+" : r.n}
+    </span>
+  );
+}
+
 export function Kabuk({ children }: { children: ReactNode }) {
   const { yol } = useYon();
-  const { kullanici, meta } = useUygulama();
+  const { kullanici, meta, surum } = useUygulama();
   const ogeler = navOgeleri(kullanici?.rol);
+  const rozet = uyariRozeti(surum?.uyariOzet);
+  const etiket = (o: NavOge) => (o.yol === "/uyarilar" && rozet ? `${o.ad} — ${rozet.ad}` : o.ad);
   return (
     <div className="min-h-dvh">
       {/* Sol ray */}
@@ -42,11 +60,12 @@ export function Kabuk({ children }: { children: ReactNode }) {
             <Baglanti
               key={o.yol}
               to={o.yol}
-              aria-label={o.ad}
+              aria-label={etiket(o)}
               aria-current={aktif ? "page" : undefined}
               className={cx("group relative flex h-12 w-12 items-center justify-center rounded-2xl transition", aktif ? "bg-marka text-white dark:text-[#0b1020]" : "text-soluk hover:bg-kart2 hover:text-yazi")}
             >
               <o.ikon size={24} aria-hidden />
+              {o.yol === "/uyarilar" && rozet && <Rozet r={rozet} className="top-0.5 right-0.5" />}
               <span className="pointer-events-none absolute left-14 z-40 hidden rounded-lg bg-yazi px-2 py-1 text-xs font-semibold whitespace-nowrap text-zemin shadow group-hover:block group-focus-visible:block">
                 {o.ad}
               </span>
@@ -67,9 +86,10 @@ export function Kabuk({ children }: { children: ReactNode }) {
             const aktif = o.eslesme(yol);
             return (
               <li key={o.yol}>
-                <Baglanti to={o.yol} aria-current={aktif ? "page" : undefined} className={cx("flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] font-medium", aktif ? "text-marka" : "text-soluk")}>
-                  <span className={cx("flex h-8 w-12 items-center justify-center rounded-full transition", aktif && "bg-marka-yumusak")}>
+                <Baglanti to={o.yol} aria-label={etiket(o)} aria-current={aktif ? "page" : undefined} className={cx("flex h-16 flex-col items-center justify-center gap-0.5 text-[11px] font-medium", aktif ? "text-marka" : "text-soluk")}>
+                  <span className={cx("relative flex h-8 w-12 items-center justify-center rounded-full transition", aktif && "bg-marka-yumusak")}>
                     <o.ikon size={22} aria-hidden />
+                    {o.yol === "/uyarilar" && rozet && <Rozet r={rozet} className="-top-1 right-0.5" />}
                   </span>
                   {o.ad}
                 </Baglanti>

@@ -32,8 +32,9 @@ type UygulamaCtx = {
 
 const Ctx = createContext<UygulamaCtx | null>(null);
 
+// Tarayıcıda yalnız tema tutulur (girişten önceki ilk boyama için); diğer tercihler sunucuda
 const YEREL = "vb_tercih";
-type Yerel = { tema?: Tema; hepsi?: boolean; bas?: string; bit?: string };
+type Yerel = { tema?: Tema };
 
 function yerelOku(): Yerel {
   try {
@@ -90,14 +91,13 @@ export function UygulamaSaglayici({ children }: { children: ReactNode }) {
 
   const tercihUygula = useCallback((k: Kullanici) => {
     const t = k.tercihler || {};
-    const y = yerelOku();
     if (t.tema) {
       setTemaS(t.tema);
       yerelYaz({ tema: t.tema });
     }
-    if (y.hepsi) setFirmalarS(["hepsi"]);
-    else setFirmalarS(Array.isArray(t.firmalar) ? t.firmalar : []);
-    if (t.donem) setDonemS(t.donem === "ozel" && y.bas && y.bit ? { kod: "ozel", bas: y.bas, bit: y.bit } : t.donem === "ozel" ? { kod: "bu_ay" } : { kod: t.donem });
+    const f = Array.isArray(t.firmalar) ? t.firmalar : [];
+    setFirmalarS(f.includes("hepsi") ? ["hepsi"] : f);
+    if (t.donem) setDonemS(t.donem === "ozel" ? (t.donemBas && t.donemBit ? { kod: "ozel", bas: t.donemBas, bit: t.donemBit } : { kod: "bu_ay" }) : { kod: t.donem });
   }, []);
 
   const metaYenile = useCallback(async () => {
@@ -178,10 +178,9 @@ export function UygulamaSaglayici({ children }: { children: ReactNode }) {
 
   const setFirmalar = useCallback(
     (f: string[]) => {
-      const hepsi = f.includes("hepsi");
-      setFirmalarS(hepsi ? ["hepsi"] : f);
-      yerelYaz({ hepsi });
-      tercihKaydet({ firmalar: hepsi ? [] : f });
+      const secim = f.includes("hepsi") ? ["hepsi"] : f;
+      setFirmalarS(secim);
+      tercihKaydet({ firmalar: secim });
     },
     [tercihKaydet],
   );
@@ -189,8 +188,7 @@ export function UygulamaSaglayici({ children }: { children: ReactNode }) {
   const setDonem = useCallback(
     (d: DonemSecimi) => {
       setDonemS(d);
-      if (d.kod === "ozel") yerelYaz({ bas: d.bas, bit: d.bit });
-      tercihKaydet({ donem: d.kod });
+      tercihKaydet(d.kod === "ozel" ? { donem: "ozel", donemBas: d.bas, donemBit: d.bit } : { donem: d.kod, donemBas: null, donemBit: null });
     },
     [tercihKaydet],
   );
@@ -204,12 +202,15 @@ export function UygulamaSaglayici({ children }: { children: ReactNode }) {
     [tercihKaydet],
   );
 
-  // Veri sürümü yoklaması (60 sn; sekme gizliyken durur)
+  const firmaParam = firmalar.includes("hepsi") ? "hepsi" : firmalar.length ? firmalar.join(",") : undefined;
+
+  // Veri sürümü yoklaması (60 sn; sekme gizliyken durur). Uyarı özeti firma seçimine bağlı:
+  // seçim değişince yoklama hemen yinelenir.
   const veriSurumuRef = useRef(veriSurumu);
   veriSurumuRef.current = veriSurumu;
   const surumYokla = useCallback(async () => {
     try {
-      const s = await api<Surum>("/surum");
+      const s = await api<Surum>(firmaParam ? `/surum?firma=${encodeURIComponent(firmaParam)}` : "/surum");
       setSurum(s);
       if (veriSurumuRef.current && s.veriSurumu !== veriSurumuRef.current) {
         raporOnbellekTemizle();
@@ -219,7 +220,7 @@ export function UygulamaSaglayici({ children }: { children: ReactNode }) {
     } catch {
       /* 401 dinleyicisi halleder */
     }
-  }, [bildir]);
+  }, [bildir, firmaParam]);
 
   const hazir = !!meta;
   useEffect(() => {
@@ -239,8 +240,6 @@ export function UygulamaSaglayici({ children }: { children: ReactNode }) {
       document.removeEventListener("visibilitychange", baslat);
     };
   }, [hazir, surumYokla]);
-
-  const firmaParam = firmalar.includes("hepsi") ? "hepsi" : firmalar.length ? firmalar.join(",") : undefined;
 
   const deger = useMemo<UygulamaCtx>(
     () => ({
